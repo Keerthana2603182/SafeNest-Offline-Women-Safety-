@@ -1,23 +1,35 @@
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
-import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
+import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import React, { useEffect } from 'react';
 
+import { Palette } from '@/constants/theme';
 import { ensureAuthenticatedUser } from '@/lib/firebase';
 
-export default function RootLayout() {
-  const colorScheme = useColorScheme();
+const CustomDarkTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    background: Palette.bgPrimary,
+    card: Palette.bgSecondary,
+    text: Palette.textPrimary,
+    border: Palette.borderSubtle,
+    primary: Palette.accentLime,
+  },
+};
 
+export default function RootLayout() {
   useEffect(() => {
     // Proactively initialize persistent authentication session (anonymous or registered)
     void ensureAuthenticatedUser().catch(() => {});
   }, []);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={CustomDarkTheme}>
+      <StatusBar style="light" />
       <Stack
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: '#100D20' },
+          contentStyle: { backgroundColor: Palette.bgPrimary },
           animation: 'slide_from_right',
         }}
       >

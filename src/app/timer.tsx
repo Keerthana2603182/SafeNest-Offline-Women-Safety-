@@ -1,5 +1,4 @@
-import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -12,6 +11,13 @@ import {
   Vibration,
   View,
 } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+
+import { Palette, Radius, Spacing } from '@/constants/theme';
+import { GlassCard } from '@/components/ui/glass-card';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { TacticalButton } from '@/components/ui/tactical-button';
 import {
   clearPersistentTimer,
   getPersistentTimer,
@@ -19,10 +25,10 @@ import {
 } from '@/lib/safety-service';
 
 const PRESET_DURATIONS = [
-  { label: '5 min', minutes: 5, description: 'Quick walk / car' },
-  { label: '15 min', minutes: 15, description: 'Transit / commute' },
-  { label: '30 min', minutes: 30, description: 'Walking home' },
-  { label: '60 min', minutes: 60, description: 'Long journey' },
+  { label: '5 min', minutes: 5, description: 'Quick walk / transit stop', icon: 'walk' },
+  { label: '15 min', minutes: 15, description: 'Commute / short drive', icon: 'car' },
+  { label: '30 min', minutes: 30, description: 'Walking home / night', icon: 'moon' },
+  { label: '60 min', minutes: 60, description: 'Long journey / transit', icon: 'airplane' },
 ];
 
 export default function SafetyTimerScreen() {
@@ -48,7 +54,7 @@ export default function SafetyTimerScreen() {
       try {
         Vibration.vibrate(pattern);
       } catch {
-        // Quiet fallback
+        // Fallback
       }
     }
   }
@@ -71,7 +77,7 @@ export default function SafetyTimerScreen() {
 
     Alert.alert(
       '⚠️ Safety Timer Expired!',
-      `You have not checked in for your journey: "${activityNote}". Are you safe, or do you need to trigger emergency SOS?`,
+      `You have not checked in for: "${activityNote}". Are you safe, or do you need to trigger emergency SOS?`,
       [
         {
           text: 'I Am Safe',
@@ -172,7 +178,6 @@ export default function SafetyTimerScreen() {
 
     triggerVibration([0, 200, 100, 200]);
 
-    // Persist to storage & cloud
     void savePersistentTimer({
       isActive: true,
       initialSeconds: totalSecs,
@@ -198,8 +203,8 @@ export default function SafetyTimerScreen() {
     void clearPersistentTimer();
 
     Alert.alert(
-      'Safe Arrival Confirmed! 🎉',
-      `You checked in safely for: "${activityNote}". Your safety timer has been successfully completed.`,
+      'Safe Arrival Verified! 🎉',
+      `You checked in safely for: "${activityNote}". Sentinel deactivated.`,
       [{ text: 'OK' }]
     );
   }
@@ -220,7 +225,6 @@ export default function SafetyTimerScreen() {
     const updatedArrival = new Date(targetEndTimeRef.current);
     setEstimatedArrival(updatedArrival.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
 
-    // Persist extended timer
     void savePersistentTimer({
       isActive: true,
       initialSeconds: initialSeconds + additionalSecs,
@@ -230,17 +234,17 @@ export default function SafetyTimerScreen() {
       status: 'running',
     });
 
-    Alert.alert('Timer Extended', `Added +${additionalMinutes} minutes to your arrival window.`);
+    Alert.alert('Window Extended', `Added +${additionalMinutes} minutes to your arrival window.`);
   }
 
   function cancelTimer() {
     Alert.alert(
-      'Cancel Safety Timer?',
+      'Cancel Safety Watch?',
       'Are you sure you want to stop this safety timer without confirming safe arrival?',
       [
         { text: 'Keep Running', style: 'cancel' },
         {
-          text: 'Stop Timer',
+          text: 'Stop Watch',
           style: 'destructive',
           onPress: () => {
             if (timerIntervalRef.current) {
@@ -258,6 +262,10 @@ export default function SafetyTimerScreen() {
     );
   }
 
+  function adjustMinutes(delta: number) {
+    setSelectedMinutes((prev) => Math.max(5, Math.min(180, prev + delta)));
+  }
+
   function formatTime(totalSecs: number) {
     const mins = Math.floor(totalSecs / 60);
     const secs = totalSecs % 60;
@@ -270,13 +278,14 @@ export default function SafetyTimerScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.keyboardContainer}
+      style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <View style={styles.headerRow}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Navigation & Status Header */}
+        <View style={styles.topNav}>
           <TouchableOpacity
-            style={styles.backButton}
+            style={styles.backBtn}
             onPress={() => {
               if (router.canGoBack()) {
                 router.back();
@@ -286,133 +295,143 @@ export default function SafetyTimerScreen() {
             }}
             accessible={true}
             accessibilityRole="button"
-            accessibilityLabel="Go back to dashboard"
+            accessibilityLabel="Back to dashboard"
           >
-            <Text style={styles.backButtonText}>← Dashboard</Text>
+            <Ionicons name="arrow-back" size={16} color={Palette.textPrimary} />
+            <Text style={styles.backBtnText}>Dashboard</Text>
           </TouchableOpacity>
-          <Text style={styles.headerBadge}>⏱️ Safety Timer</Text>
+
+          <StatusBadge
+            label={isActive ? 'SENTINEL ENGAGED' : 'STANDBY'}
+            variant={isActive ? 'lime' : 'neutral'}
+            pulse={isActive}
+          />
         </View>
 
-        <Text style={styles.heading} accessibilityRole="header">Safe Arrival Timer</Text>
-        <Text style={styles.subtitle}>
-          {"Set a timer when walking alone, commuting, or meeting someone. If you don't check in before it expires, SafeNest prompts emergency escalation."}
-        </Text>
+        {/* Editorial Header */}
+        <View style={styles.editorialHeader}>
+          <Text style={styles.kicker}>AUTONOMOUS PROTOCOL</Text>
+          <Text style={styles.heading}>Safe Arrival Watch.</Text>
+          <Text style={styles.subheading}>
+            Set your expected journey window. If you don’t check in before it expires, SafeNest prompts immediate emergency escalation.
+          </Text>
+        </View>
 
         {/* Expired Warning Banner */}
-        {isExpired ? (
-          <View style={styles.expiredBanner} accessible={true} accessibilityRole="alert">
-            <Text style={styles.expiredBannerTitle}>⚠️ TIMER OVERDUE</Text>
-            <Text style={styles.expiredBannerText}>
-              Your scheduled arrival time has passed. Tap below to confirm you are safe or trigger emergency help.
-            </Text>
-            <View style={styles.expiredActions}>
-              <TouchableOpacity
-                style={styles.safeExpiredButton}
-                onPress={() => setIsExpired(false)}
-                accessible={true}
-                accessibilityRole="button"
-                accessibilityLabel="I am safe"
-              >
-                <Text style={styles.safeExpiredText}>✓ I Am Safe</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.sosExpiredButton}
-                onPress={() => router.push({ pathname: '/', params: { trigger: 'sos' } })}
-                accessible={true}
-                accessibilityRole="button"
-                accessibilityLabel="Go to SOS Emergency screen"
-              >
-                <Text style={styles.sosExpiredText}>🚨 Go to SOS</Text>
-              </TouchableOpacity>
+        {isExpired && (
+          <GlassCard variant="danger" style={styles.expiredBanner}>
+            <View style={styles.expiredHeader}>
+              <View style={styles.expiredIconOrb}>
+                <Ionicons name="alert" size={20} color={Palette.accentCoral} />
+              </View>
+              <View>
+                <Text style={styles.expiredTitle}>ARRIVAL WINDOW OVERDUE</Text>
+                <Text style={styles.expiredDesc}>Your scheduled check-in window has elapsed.</Text>
+              </View>
             </View>
-          </View>
-        ) : null}
 
-        {/* Active Timer Display */}
+            <View style={styles.expiredActions}>
+              <TacticalButton
+                label="✓ I Am Safe"
+                variant="primary"
+                onPress={() => {
+                  setIsExpired(false);
+                  void clearPersistentTimer();
+                }}
+                style={styles.expiredBtn}
+              />
+              <TacticalButton
+                label="🚨 Trigger SOS Now"
+                variant="coral"
+                onPress={() => router.push({ pathname: '/', params: { trigger: 'sos' } })}
+                style={styles.expiredBtn}
+              />
+            </View>
+          </GlassCard>
+        )}
+
+        {/* Active Journey Card */}
         {isActive ? (
-          <View style={styles.activeCard} accessible={true} accessibilityRole="timer">
-            <Text style={styles.activeTitle}>JOURNEY IN PROGRESS</Text>
-            <Text style={styles.activeActivity}>{`"${activityNote}"`}</Text>
+          <GlassCard variant="elevated" style={styles.activeCard}>
+            <View style={styles.activeBadgeRow}>
+              <View style={styles.activePill}>
+                <View style={styles.activeDot} />
+                <Text style={styles.activePillText}>WATCH IN PROGRESS</Text>
+              </View>
+              <Text style={styles.progressPercentText}>{progressPercent}% ELAPSED</Text>
+            </View>
 
-            <View style={styles.countdownBox}>
-              <Text style={styles.countdownDigits}>{formatTime(remainingSeconds)}</Text>
-              <Text style={styles.countdownLabel}>REMAINING</Text>
+            <Text style={styles.destinationTitle}>&ldquo;{activityNote}&rdquo;</Text>
+
+            {/* Glowing Big Digital Clock */}
+            <View style={styles.clockRing}>
+              <Text style={styles.clockDigits}>{formatTime(remainingSeconds)}</Text>
+              <Text style={styles.clockSub}>TIME REMAINING</Text>
             </View>
 
             {/* Progress Bar */}
-            <View style={styles.progressBarBg}>
-              <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
-            </View>
-            <Text style={styles.progressText}>{progressPercent}% of journey completed</Text>
-
-            <View style={styles.timeMeta}>
-              <Text style={styles.metaItem}>Started: {startTime}</Text>
-              <Text style={styles.metaItem}>Expected by: {estimatedArrival}</Text>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
             </View>
 
-            {/* Check-in Safe Button */}
-            <TouchableOpacity
-              style={styles.checkInButton}
+            <View style={styles.metaStrip}>
+              <View style={styles.metaItem}>
+                <Text style={styles.metaLabel}>STARTED</Text>
+                <Text style={styles.metaVal}>{startTime ?? '—'}</Text>
+              </View>
+              <View style={styles.metaDivider} />
+              <View style={styles.metaItem}>
+                <Text style={styles.metaLabel}>ESTIMATED ARRIVAL</Text>
+                <Text style={[styles.metaVal, { color: Palette.accentLime }]}>{estimatedArrival ?? '—'}</Text>
+              </View>
+            </View>
+
+            {/* Primary Check-In Button */}
+            <TacticalButton
+              label="✓ I Have Arrived Safely"
+              variant="primary"
+              icon={<Ionicons name="checkmark-circle" size={18} color="#0A0C10" />}
               onPress={checkInSafe}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="I have arrived safely. Double tap to stop safety timer."
-              activeOpacity={0.85}
-            >
-              <Text style={styles.checkInText}>✓ I HAVE ARRIVED SAFELY</Text>
-            </TouchableOpacity>
-
-            {/* Extensions */}
-            <Text style={styles.extendHeader}>Running late? Add time:</Text>
-            <View style={styles.extendRow}>
-              <TouchableOpacity
-                style={styles.extendButton}
-                onPress={() => extendTimer(5)}
-                accessible={true}
-                accessibilityRole="button"
-                accessibilityLabel="Add 5 minutes to safety timer"
-                activeOpacity={0.8}
-              >
-                <Text style={styles.extendButtonText}>+5 Min</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.extendButton}
-                onPress={() => extendTimer(15)}
-                accessible={true}
-                accessibilityRole="button"
-                accessibilityLabel="Add 15 minutes to safety timer"
-                activeOpacity={0.8}
-              >
-                <Text style={styles.extendButtonText}>+15 Min</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.cancelLink}
-                onPress={cancelTimer}
-                accessible={true}
-                accessibilityRole="button"
-                accessibilityLabel="Cancel timer without check-in"
-                activeOpacity={0.7}
-              >
-                <Text style={styles.cancelLinkText}>Stop</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          /* Timer Setup Section */
-          <View style={styles.setupCard}>
-            <Text style={styles.sectionLabel}>1. What are you doing?</Text>
-            <TextInput
-              style={styles.activityInput}
-              placeholder="e.g. Walking home, Taking cab #1234"
-              placeholderTextColor="#999"
-              value={activityNote}
-              onChangeText={setActivityNote}
-              accessible={true}
-              accessibilityLabel="Journey activity or destination note"
-              accessibilityHint="Type where you are going or what you are doing"
+              style={styles.checkInBtn}
             />
 
-            <Text style={styles.sectionLabel}>2. Select expected duration:</Text>
+            <View style={styles.activeAuxRow}>
+              <TacticalButton
+                label="+15 Min Extend"
+                variant="secondary"
+                icon={<Ionicons name="add-circle-outline" size={16} color={Palette.textPrimary} />}
+                onPress={() => extendTimer(15)}
+                style={styles.auxBtn}
+              />
+              <TacticalButton
+                label="Cancel Watch"
+                variant="ghost"
+                onPress={cancelTimer}
+                style={styles.auxBtn}
+              />
+            </View>
+          </GlassCard>
+        ) : (
+          /* Pre-Flight Configuration Console */
+          <View style={styles.configConsole}>
+            {/* Destination Note Card */}
+            <GlassCard style={styles.inputCard}>
+              <Text style={styles.configCardTitle}>DESTINATION & NOTES</Text>
+              <TextInput
+                style={styles.noteInput}
+                placeholder="e.g. Walking home from Metro, Taking Uber #48"
+                placeholderTextColor={Palette.textMuted}
+                value={activityNote}
+                onChangeText={setActivityNote}
+              />
+            </GlassCard>
+
+            {/* Preset Cards Grid */}
+            <View style={styles.presetSectionHeader}>
+              <Text style={styles.presetSectionTitle}>SELECT ARRIVAL WINDOW</Text>
+              <Text style={styles.presetSectionMeta}>{selectedMinutes} MINUTES</Text>
+            </View>
+
             <View style={styles.presetsGrid}>
               {PRESET_DURATIONS.map((preset) => {
                 const isSelected = selectedMinutes === preset.minutes;
@@ -421,369 +440,392 @@ export default function SafetyTimerScreen() {
                     key={preset.minutes}
                     style={[styles.presetCard, isSelected && styles.presetCardSelected]}
                     onPress={() => setSelectedMinutes(preset.minutes)}
-                    accessible={true}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${preset.label}, ${preset.description}`}
-                    accessibilityState={{ selected: isSelected }}
-                    activeOpacity={0.8}
+                    activeOpacity={0.82}
                   >
-                    <Text style={[styles.presetLabel, isSelected && styles.presetLabelSelected]}>
-                      {preset.label}
-                    </Text>
+                    <View style={styles.presetTop}>
+                      <Ionicons
+                        name={preset.icon as any}
+                        size={18}
+                        color={isSelected ? Palette.accentLime : Palette.textMuted}
+                      />
+                      <Text style={[styles.presetLabel, isSelected && styles.presetLabelSelected]}>
+                        {preset.label}
+                      </Text>
+                    </View>
                     <Text style={styles.presetDesc}>{preset.description}</Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
 
-            <TouchableOpacity
-              style={styles.startButton}
+            {/* Custom Minutes Stepper */}
+            <GlassCard style={styles.stepperCard}>
+              <View>
+                <Text style={styles.stepperTitle}>Fine-Tune Window</Text>
+                <Text style={styles.stepperSub}>Adjust duration by 5-minute increments</Text>
+              </View>
+              <View style={styles.stepperControls}>
+                <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustMinutes(-5)}>
+                  <Ionicons name="remove" size={18} color={Palette.textPrimary} />
+                </TouchableOpacity>
+                <Text style={styles.stepperNumber}>{selectedMinutes}m</Text>
+                <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustMinutes(5)}>
+                  <Ionicons name="add" size={18} color={Palette.textPrimary} />
+                </TouchableOpacity>
+              </View>
+            </GlassCard>
+
+            {/* Engage Button */}
+            <TacticalButton
+              label={`Engage Arrival Watch (${selectedMinutes} min)`}
+              variant="primary"
+              icon={<Ionicons name="shield-checkmark" size={18} color="#0A0C10" />}
               onPress={startTimer}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel={`Start ${selectedMinutes} minute safety timer for ${activityNote}`}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.startButtonText}>
-                ▶ START {selectedMinutes}-MIN SAFETY TIMER
-              </Text>
-            </TouchableOpacity>
+              style={styles.engageBtn}
+            />
           </View>
         )}
-
-        <View style={styles.howItWorksCard}>
-          <Text style={styles.howItWorksTitle}>💡 How Safe Arrival Works</Text>
-          <Text style={styles.howItWorksItem}>
-            • When you start the timer, SafeNest actively monitors your arrival window.
-          </Text>
-          <Text style={styles.howItWorksItem}>
-            {"• If you get delayed in traffic or run into a friend, tap '+5 Min' or '+15 Min' to extend."}
-          </Text>
-          <Text style={styles.howItWorksItem}>
-            {"• When you reach your destination, tap 'I Have Arrived Safely' to close the timer."}
-          </Text>
-          <Text style={styles.howItWorksItem}>
-            • If the timer expires before check-in, an urgent alarm sounds to confirm your well-being.
-          </Text>
-        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  keyboardContainer: {
+  root: {
     flex: 1,
-    backgroundColor: '#100D20',
+    backgroundColor: Palette.bgPrimary,
   },
-  container: {
+  scroll: {
     flex: 1,
-    backgroundColor: '#100D20',
   },
   content: {
-    padding: 22,
-    paddingTop: 55,
-    paddingBottom: 40,
+    paddingHorizontal: Spacing.four,
+    paddingTop: Platform.select({ ios: 60, android: 45 }) ?? 45,
+    paddingBottom: 110,
   },
-  headerRow: {
+  topNav: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: Spacing.four,
   },
-  backButton: {
-    minHeight: 44,
-    justifyContent: 'center',
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: Radius.md,
+    backgroundColor: Palette.bgElevated,
+    borderWidth: 1,
+    borderColor: Palette.borderSubtle,
   },
-  backButtonText: {
-    color: '#A78BFA',
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  headerBadge: {
-    color: '#86EFAC',
+  backBtnText: {
+    color: Palette.textPrimary,
     fontSize: 13,
     fontWeight: '700',
+  },
+  editorialHeader: {
+    marginBottom: Spacing.four,
+  },
+  kicker: {
+    color: Palette.accentLime,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginBottom: 6,
   },
   heading: {
-    color: '#FFFFFF',
-    fontSize: 27,
-    fontWeight: 'bold',
+    color: Palette.textPrimary,
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    marginBottom: 6,
   },
-  subtitle: {
-    color: '#BDB6D0',
+  subheading: {
+    color: Palette.textSecondary,
     fontSize: 14,
-    lineHeight: 21,
-    marginTop: 8,
-    marginBottom: 20,
+    lineHeight: 20,
   },
 
-  // Setup Card
-  setupCard: {
-    backgroundColor: '#211B36',
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 20,
+  // Overdue Banner
+  expiredBanner: {
+    marginBottom: Spacing.four,
   },
-  sectionLabel: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    marginTop: 4,
-  },
-  activityInput: {
-    backgroundColor: '#2E2648',
-    color: '#FFFFFF',
-    padding: 15,
-    borderRadius: 12,
-    fontSize: 15,
-    marginBottom: 20,
-    minHeight: 50,
-  },
-  presetsGrid: {
+  expiredHeader: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 10,
-    marginBottom: 22,
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: Spacing.three,
   },
-  presetCard: {
-    backgroundColor: '#2E2648',
-    width: '48%',
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: 'transparent',
-    minHeight: 70,
+  expiredIconOrb: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Palette.accentCoralSoft,
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  presetCardSelected: {
-    borderColor: '#8B5CF6',
-    backgroundColor: '#372A5C',
-  },
-  presetLabel: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  presetLabelSelected: {
-    color: '#C4A5FF',
-  },
-  presetDesc: {
-    color: '#B8B3C9',
-    fontSize: 11,
-    marginTop: 4,
-  },
-  startButton: {
-    backgroundColor: '#8B5CF6',
-    padding: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    minHeight: 52,
-    justifyContent: 'center',
-  },
-  startButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-
-  // Active Timer Card
-  activeCard: {
-    backgroundColor: '#211B36',
-    borderRadius: 20,
-    padding: 24,
-    alignItems: 'center',
-    marginBottom: 20,
-    borderWidth: 2,
-    borderColor: '#8B5CF6',
-  },
-  activeTitle: {
-    color: '#86EFAC',
-    fontSize: 12,
-    fontWeight: '900',
+  expiredTitle: {
+    color: Palette.accentCoral,
+    fontSize: 13,
+    fontWeight: '800',
     letterSpacing: 1,
   },
-  activeActivity: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginTop: 6,
-    textAlign: 'center',
-  },
-  countdownBox: {
-    marginTop: 18,
-    marginBottom: 16,
-    alignItems: 'center',
-  },
-  countdownDigits: {
-    color: '#FFFFFF',
-    fontSize: 54,
-    fontWeight: '900',
-    fontVariant: ['tabular-nums'],
-  },
-  countdownLabel: {
-    color: '#A78BFA',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-  },
-  progressBarBg: {
-    width: '100%',
-    height: 8,
-    backgroundColor: '#2E2648',
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#86EFAC',
-  },
-  progressText: {
-    color: '#B8B3C9',
-    fontSize: 11,
-    marginBottom: 14,
-  },
-  timeMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: '#2E2648',
-    marginBottom: 20,
-  },
-  metaItem: {
-    color: '#E0DBEC',
+  expiredDesc: {
+    color: Palette.textSecondary,
     fontSize: 12,
-  },
-  checkInButton: {
-    backgroundColor: '#2B7A4B',
-    width: '100%',
-    padding: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    minHeight: 52,
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  checkInText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  extendHeader: {
-    color: '#B8B3C9',
-    fontSize: 12,
-    marginBottom: 8,
-  },
-  extendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    width: '100%',
-    justifyContent: 'center',
-  },
-  extendButton: {
-    backgroundColor: '#372A5C',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  extendButtonText: {
-    color: '#D8C9FF',
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  cancelLink: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  cancelLinkText: {
-    color: '#FF8585',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-
-  // Expired Warning Banner
-  expiredBanner: {
-    backgroundColor: '#3E101D',
-    borderColor: '#E63955',
-    borderWidth: 2,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-  },
-  expiredBannerTitle: {
-    color: '#FF4D6D',
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  expiredBannerText: {
-    color: '#FFCAD4',
-    fontSize: 13,
-    marginTop: 4,
-    marginBottom: 12,
-    lineHeight: 18,
+    marginTop: 2,
   },
   expiredActions: {
     flexDirection: 'row',
     gap: 10,
   },
-  safeExpiredButton: {
+  expiredBtn: {
     flex: 1,
-    backgroundColor: '#2B7A4B',
-    padding: 12,
-    borderRadius: 10,
-    alignItems: 'center',
     minHeight: 44,
-    justifyContent: 'center',
-  },
-  safeExpiredText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 13,
-  },
-  sosExpiredButton: {
-    flex: 1,
-    backgroundColor: '#E63955',
-    padding: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  sosExpiredText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 13,
   },
 
-  // Informational Card
-  howItWorksCard: {
-    backgroundColor: '#1E1730',
-    padding: 18,
-    borderRadius: 16,
+  // Active Journey Card
+  activeCard: {
+    padding: Spacing.four,
+    marginBottom: Spacing.four,
+    alignItems: 'center',
   },
-  howItWorksTitle: {
-    color: '#FFFFFF',
+  activeBadgeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: Spacing.two,
+  },
+  activePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  activeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Palette.accentLime,
+  },
+  activePillText: {
+    color: Palette.accentLime,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  progressPercentText: {
+    color: Palette.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  destinationTitle: {
+    color: Palette.textPrimary,
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginVertical: Spacing.two,
+  },
+  clockRing: {
+    width: 200,
+    height: 120,
+    borderRadius: Radius.lg,
+    backgroundColor: Palette.bgSecondary,
+    borderWidth: 1,
+    borderColor: 'rgba(212, 255, 58, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: Spacing.three,
+  },
+  clockDigits: {
+    color: Palette.textPrimary,
+    fontSize: 48,
+    fontWeight: '900',
+    letterSpacing: 2,
+    fontFamily: Platform.select({ ios: 'Courier', default: 'monospace' }),
+  },
+  clockSub: {
+    color: Palette.accentLime,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginTop: 4,
+  },
+  progressTrack: {
+    width: '100%',
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    overflow: 'hidden',
+    marginBottom: Spacing.three,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: Palette.accentLime,
+    borderRadius: 3,
+  },
+  metaStrip: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+    paddingVertical: Spacing.two,
+    backgroundColor: 'rgba(0, 0, 0, 0.25)',
+    borderRadius: Radius.md,
+    marginBottom: Spacing.four,
+  },
+  metaItem: {
+    alignItems: 'center',
+  },
+  metaDivider: {
+    width: 1,
+    height: '80%',
+    backgroundColor: Palette.borderSubtle,
+    alignSelf: 'center',
+  },
+  metaLabel: {
+    color: Palette.textMuted,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 2,
+  },
+  metaVal: {
+    color: Palette.textPrimary,
     fontSize: 14,
-    fontWeight: 'bold',
+    fontWeight: '700',
+  },
+  checkInBtn: {
+    width: '100%',
+    marginBottom: 10,
+  },
+  activeAuxRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  auxBtn: {
+    flex: 1,
+    minHeight: 42,
+  },
+
+  // Configuration Console
+  configConsole: {
+    gap: 12,
+  },
+  inputCard: {
+    padding: Spacing.three,
+  },
+  configCardTitle: {
+    color: Palette.accentLime,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
     marginBottom: 8,
   },
-  howItWorksItem: {
-    color: '#B8B3C9',
+  noteInput: {
+    backgroundColor: Palette.bgSecondary,
+    color: Palette.textPrimary,
+    borderRadius: Radius.md,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: Palette.borderSubtle,
+  },
+  presetSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: Spacing.two,
+  },
+  presetSectionTitle: {
+    color: Palette.textSecondary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+  },
+  presetSectionMeta: {
+    color: Palette.accentLime,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  presetsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  presetCard: {
+    width: '48.5%',
+    backgroundColor: Palette.bgCard,
+    borderRadius: Radius.md,
+    padding: Spacing.three,
+    borderWidth: 1,
+    borderColor: Palette.borderSubtle,
+  },
+  presetCardSelected: {
+    borderColor: Palette.accentLime,
+    backgroundColor: 'rgba(212, 255, 58, 0.08)',
+  },
+  presetTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  presetLabel: {
+    color: Palette.textPrimary,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  presetLabelSelected: {
+    color: Palette.accentLime,
+  },
+  presetDesc: {
+    color: Palette.textMuted,
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  stepperCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: Spacing.three,
+  },
+  stepperTitle: {
+    color: Palette.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  stepperSub: {
+    color: Palette.textMuted,
     fontSize: 12,
-    lineHeight: 18,
-    marginTop: 4,
+    marginTop: 2,
+  },
+  stepperControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  stepperBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Palette.bgElevated,
+    borderWidth: 1,
+    borderColor: Palette.borderGlass,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperNumber: {
+    color: Palette.textPrimary,
+    fontSize: 16,
+    fontWeight: '800',
+    minWidth: 40,
+    textAlign: 'center',
+  },
+  engageBtn: {
+    marginTop: Spacing.two,
   },
 });

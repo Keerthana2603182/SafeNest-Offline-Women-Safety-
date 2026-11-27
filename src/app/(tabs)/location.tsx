@@ -1,8 +1,7 @@
-import * as Location from 'expo-location';
-import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Clipboard,
   Linking,
   Platform,
   ScrollView,
@@ -11,6 +10,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+
+import { DarkMapStyle, Palette, Radius, Spacing } from '@/constants/theme';
+import { GlassCard } from '@/components/ui/glass-card';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { TacticalButton } from '@/components/ui/tactical-button';
 import {
   getActiveShareId,
   startLiveSharing,
@@ -18,6 +25,23 @@ import {
   subscribeToConnectionStatus,
   updateLiveLocation,
 } from '@/lib/safety-service';
+
+// Safe platform-aware map loading
+let MapViewComponent: any = null;
+let MarkerComponent: any = null;
+let CircleComponent: any = null;
+
+if (Platform.OS !== 'web') {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Maps = require('react-native-maps');
+    MapViewComponent = Maps.default;
+    MarkerComponent = Maps.Marker;
+    CircleComponent = Maps.Circle;
+  } catch {
+    // Quiet fallback
+  }
+}
 
 type ExtendedCoordinates = {
   latitude: number;
@@ -34,7 +58,6 @@ export default function LocationScreen() {
   const [tracking, setTracking] = useState(false);
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [showKeyDiagnosis, setShowKeyDiagnosis] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [activeShareId, setActiveShareId] = useState<string | null>(null);
   const [sharingLoading, setSharingLoading] = useState(false);
@@ -182,7 +205,7 @@ export default function LocationScreen() {
             { text: 'OK' },
             {
               text: 'View Track Portal',
-              onPress: () => router.push(`/track?id=${shareId}`),
+              onPress: () => router.push({ pathname: '/track', params: { id: shareId } }),
             },
           ]
         );
@@ -194,7 +217,7 @@ export default function LocationScreen() {
             { text: 'OK' },
             {
               text: 'View Local Portal',
-              onPress: () => router.push(`/track?id=${shareId}`),
+              onPress: () => router.push({ pathname: '/track', params: { id: shareId } }),
             },
           ]
         );
@@ -253,6 +276,16 @@ export default function LocationScreen() {
     }
   }
 
+  function copyCoordinates() {
+    if (!position) {
+      Alert.alert('No Position', 'Acquire GPS coordinates first.');
+      return;
+    }
+    const text = `Lat: ${position.latitude.toFixed(6)}, Long: ${position.longitude.toFixed(6)} (±${Math.round(position.accuracy || 10)}m)`;
+    Clipboard.setString(text);
+    Alert.alert('Copied', 'GPS telemetry coordinates copied to clipboard.');
+  }
+
   async function shareLocation() {
     if (!position) {
       Alert.alert('No Position', 'Start GPS tracking first to capture your location.');
@@ -283,11 +316,11 @@ export default function LocationScreen() {
   }, []);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Navigation & Connection Status Header */}
-      <View style={styles.headerRow}>
+    <ScrollView style={styles.root} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      {/* Navigation & Telemetry Header */}
+      <View style={styles.topNav}>
         <TouchableOpacity
-          style={styles.backButton}
+          style={styles.backBtn}
           onPress={() => {
             if (router.canGoBack()) {
               router.back();
@@ -299,658 +332,555 @@ export default function LocationScreen() {
           accessibilityRole="button"
           accessibilityLabel="Back to dashboard"
         >
-          <Text style={styles.backButtonText}>← Dashboard</Text>
+          <Ionicons name="arrow-back" size={16} color={Palette.textPrimary} />
+          <Text style={styles.backBtnText}>Dashboard</Text>
         </TouchableOpacity>
 
-        <View style={styles.headerRight}>
-          <Text style={[styles.networkBadge, isOnline ? styles.networkOnline : styles.networkOffline]}>
-            {isOnline ? '🟢 Online' : '🟠 Local Mode'}
-          </Text>
-          <Text style={[styles.statusBadge, tracking ? styles.statusActive : styles.statusInactive]}>
-            {tracking ? '● GPS ACTIVE' : '○ STANDBY'}
-          </Text>
+        <View style={styles.statusPillsRow}>
+          <StatusBadge
+            label={isOnline ? 'CLOUD LINK' : 'LOCAL CACHE'}
+            variant={isOnline ? 'teal' : 'warning'}
+          />
+          <StatusBadge
+            label={tracking ? 'GPS ACTIVE' : 'STANDBY'}
+            variant={tracking ? 'lime' : 'neutral'}
+            pulse={tracking}
+          />
         </View>
       </View>
 
-      <Text style={styles.heading} accessibilityRole="header">Live GPS Tracking</Text>
-      <Text style={styles.subtitle}>
-        Real-time satellite positioning and secure live sharing with your emergency contacts.
-      </Text>
+      {/* Editorial Header */}
+      <View style={styles.editorialHeader}>
+        <Text style={styles.kicker}>SATELLITE POSITIONING</Text>
+        <Text style={styles.heading}>Live Mesh Telemetry.</Text>
+        <Text style={styles.subheading}>
+          Real-time satellite GPS tracking with encrypted bearer stream sharing for emergency safe circles.
+        </Text>
+      </View>
 
       {/* Active Live Sharing Status Banner */}
-      {activeShareId ? (
-        <View style={styles.activeShareBanner} accessible={true} accessibilityRole="alert">
+      {activeShareId && (
+        <GlassCard variant="active" style={styles.activeShareCard}>
           <View style={styles.activeShareHeader}>
-            <Text style={styles.activeShareTitle}>🔴 LIVE LOCATION SHARING ACTIVE</Text>
-            <TouchableOpacity
-              onPress={handleStopLiveSharing}
-              style={styles.revokeSmallBtn}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Revoke live sharing"
-            >
-              <Text style={styles.revokeSmallText}>Revoke</Text>
+            <View style={styles.activeSharePill}>
+              <View style={styles.liveDot} />
+              <Text style={styles.activeShareTitle}>LIVE SATELLITE STREAM ACTIVE</Text>
+            </View>
+            <TouchableOpacity onPress={handleStopLiveSharing} style={styles.revokeBtn}>
+              <Text style={styles.revokeText}>Revoke Access</Text>
             </TouchableOpacity>
           </View>
+
           <Text style={styles.activeShareSub}>
-            Tracking ID: <Text style={styles.boldText}>{activeShareId}</Text>
+            Tracking Bearer ID: <Text style={styles.monoText}>{activeShareId}</Text>
           </Text>
           <Text style={styles.activeShareDesc}>
-            Emergency contacts can view your coordinates live on web or mobile.
+            Anyone with your bearer link can view moving coordinates in real-time on web or mobile.
           </Text>
 
-          <View style={styles.shareActionRow}>
-            <TouchableOpacity
-              style={styles.viewPortalBtn}
-              onPress={() => router.push(`/track?id=${activeShareId}`)}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Open live tracking portal"
-              activeOpacity={0.8}
-            >
-              <Text style={styles.viewPortalText}>👁️ Open Live Portal</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.shareSmsBtn}
+          <View style={styles.shareActions}>
+            <TacticalButton
+              label="Open Contact Portal"
+              variant="primary"
+              icon={<Ionicons name="open-outline" size={16} color="#0A0C10" />}
+              onPress={() => router.push({ pathname: '/track', params: { id: activeShareId } })}
+              style={styles.shareActionBtn}
+            />
+            <TacticalButton
+              label="Send Link via SMS"
+              variant="secondary"
+              icon={<Ionicons name="share-social-outline" size={16} color={Palette.textPrimary} />}
               onPress={shareLocation}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Send tracking link via SMS"
-              activeOpacity={0.8}
-            >
-              <Text style={styles.shareSmsText}>✉️ Send Link</Text>
-            </TouchableOpacity>
+              style={styles.shareActionBtn}
+            />
           </View>
-        </View>
-      ) : null}
-
-      {/* Interactive Visual GPS Radar */}
-      <View style={styles.radarCard} accessible={true} accessibilityLabel="GPS radar visualization">
-        <View style={styles.radarRingOuter}>
-          <View style={styles.radarRingMiddle}>
-            <View style={styles.radarRingInner}>
-              <Text style={styles.radarCenterPin}>📍</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Compass Cardinal Indicators */}
-        <Text style={styles.compassN}>N</Text>
-        <Text style={styles.compassS}>S</Text>
-        <Text style={styles.compassW}>W</Text>
-        <Text style={styles.compassE}>E</Text>
-
-        <Text style={styles.radarStatusText}>
-          {tracking
-            ? '🛰️ SATELLITE LOCK ACTIVE'
-            : position
-            ? '📍 POSITION ACQUIRED'
-            : '🛰️ GPS READY TO TRACK'}
-        </Text>
-        <Text style={styles.radarSubText}>
-          {tracking
-            ? `Refreshing every 4s • Precision ±${Math.round(position?.accuracy || 5)}m`
-            : 'Tap Start GPS Tracking to lock your position'}
-        </Text>
-      </View>
-
-      {/* Coordinate & Telemetry Card */}
-      <View style={styles.infoCard} accessible={true} accessibilityRole="summary">
-        <Text style={styles.cardHeader}>TELEMETRY & POSITION</Text>
-        {position ? (
-          <View style={styles.telemetryGrid}>
-            <View style={styles.telemetryItem}>
-              <Text style={styles.telemetryLabel}>Latitude</Text>
-              <Text style={styles.telemetryValue}>{position.latitude.toFixed(6)}°</Text>
-            </View>
-            <View style={styles.telemetryItem}>
-              <Text style={styles.telemetryLabel}>Longitude</Text>
-              <Text style={styles.telemetryValue}>{position.longitude.toFixed(6)}°</Text>
-            </View>
-            <View style={styles.telemetryItem}>
-              <Text style={styles.telemetryLabel}>Accuracy</Text>
-              <Text style={styles.telemetryValue}>
-                {position.accuracy != null ? `±${Math.round(position.accuracy)} meters` : 'Standard'}
-              </Text>
-            </View>
-            <View style={styles.telemetryItem}>
-              <Text style={styles.telemetryLabel}>Last Updated</Text>
-              <Text style={styles.telemetryValue}>{lastUpdated || 'Just now'}</Text>
-            </View>
-            {position.speed != null && position.speed > 0 ? (
-              <View style={styles.telemetryItem}>
-                <Text style={styles.telemetryLabel}>Speed</Text>
-                <Text style={styles.telemetryValue}>{(position.speed * 3.6).toFixed(1)} km/h</Text>
-              </View>
-            ) : null}
-            {position.altitude != null ? (
-              <View style={styles.telemetryItem}>
-                <Text style={styles.telemetryLabel}>Altitude</Text>
-                <Text style={styles.telemetryValue}>{Math.round(position.altitude)} m</Text>
-              </View>
-            ) : null}
-          </View>
-        ) : (
-          <Text style={styles.emptyDetails}>
-            GPS receiver is idle. Tap the button below to request current location.
-          </Text>
-        )}
-      </View>
-
-      {/* Main GPS Start / Stop Button */}
-      <TouchableOpacity
-        style={[
-          styles.primaryButton,
-          tracking && styles.stopButton,
-          loading && styles.disabledButton,
-        ]}
-        onPress={tracking ? stopTracking : startTracking}
-        disabled={loading}
-        accessible={true}
-        accessibilityRole="button"
-        accessibilityLabel={tracking ? 'Stop GPS Tracking' : 'Start GPS Tracking'}
-        activeOpacity={0.85}
-      >
-        <Text style={styles.primaryButtonText}>
-          {loading
-            ? 'Acquiring GPS Fix…'
-            : tracking
-            ? '⏹ Stop GPS Tracking'
-            : '▶ Start GPS Tracking'}
-        </Text>
-      </TouchableOpacity>
-
-      {/* Live Cloud Sharing Button */}
-      {activeShareId ? (
-        <TouchableOpacity
-          style={styles.revokeButton}
-          onPress={handleStopLiveSharing}
-          accessible={true}
-          accessibilityRole="button"
-          accessibilityLabel="Stop and revoke live location sharing"
-          activeOpacity={0.85}
-        >
-          <Text style={styles.revokeButtonText}>🔒 Stop & Revoke Live Sharing</Text>
-        </TouchableOpacity>
-      ) : (
-        <TouchableOpacity
-          style={[styles.shareLiveButton, sharingLoading && styles.disabledButton]}
-          onPress={handleStartLiveSharing}
-          disabled={sharingLoading}
-          accessible={true}
-          accessibilityRole="button"
-          accessibilityLabel="Start live real-time location sharing"
-          activeOpacity={0.85}
-        >
-          <Text style={styles.shareLiveButtonText}>
-            {sharingLoading ? 'Creating Live Session…' : '📡 Start Live Sharing to Contacts'}
-          </Text>
-        </TouchableOpacity>
+        </GlassCard>
       )}
 
-      {/* Actions when coordinates acquired */}
-      {position ? (
-        <View style={styles.actionsContainer}>
-          <TouchableOpacity
-            style={styles.mapsButton}
-            onPress={openInMaps}
-            accessible={true}
-            accessibilityRole="button"
-            accessibilityLabel="Open current coordinates in Google Maps app"
-            activeOpacity={0.85}
+      {/* MAP-FIRST HERO SECTION */}
+      <View style={styles.mapContainer}>
+        {Platform.OS !== 'web' && MapViewComponent && position ? (
+          <MapViewComponent
+            style={styles.mapView}
+            customMapStyle={DarkMapStyle}
+            initialRegion={{
+              latitude: position.latitude,
+              longitude: position.longitude,
+              latitudeDelta: 0.01,
+              longitudeDelta: 0.01,
+            }}
+            region={{
+              latitude: position.latitude,
+              longitude: position.longitude,
+              latitudeDelta: 0.008,
+              longitudeDelta: 0.008,
+            }}
           >
-            <Text style={styles.mapsButtonText}>🗺️ Open in Google Maps App</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.shareButton}
-            onPress={shareLocation}
-            accessible={true}
-            accessibilityRole="button"
-            accessibilityLabel="Share current GPS coordinates via SMS"
-            activeOpacity={0.85}
-          >
-            <Text style={styles.shareButtonText}>✉️ Share Coordinates via SMS</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-
-      {/* Google Maps API Key Diagnosis & Configuration Panel */}
-      <View style={styles.diagnosisCard}>
-        <TouchableOpacity
-          style={styles.diagnosisHeader}
-          onPress={() => setShowKeyDiagnosis(!showKeyDiagnosis)}
-          accessible={true}
-          accessibilityRole="button"
-          accessibilityLabel="Toggle Google Maps API Key Diagnosis information"
-          activeOpacity={0.7}
-        >
-          <Text style={styles.diagnosisTitle}>
-            ℹ️ Google Maps API Key Diagnosis {showKeyDiagnosis ? '▲' : '▼'}
-          </Text>
-        </TouchableOpacity>
-
-        {showKeyDiagnosis ? (
-          <View style={styles.diagnosisBody}>
-            <Text style={styles.diagnosisP}>
-              <Text style={styles.bold}>Diagnosis:</Text> SafeNest utilizes native Google Maps intent dispatch (<Text style={styles.code}>geo:</Text> protocol). This provides 100% reliable turn-by-turn navigation and satellite maps via the official Google Maps app without requiring an embedded API key.
+            {CircleComponent && (
+              <CircleComponent
+                center={{ latitude: position.latitude, longitude: position.longitude }}
+                radius={Math.max(15, position.accuracy || 20)}
+                fillColor="rgba(0, 242, 254, 0.15)"
+                strokeColor="rgba(0, 242, 254, 0.5)"
+                strokeWidth={1.5}
+              />
+            )}
+            {MarkerComponent && (
+              <MarkerComponent
+                coordinate={{ latitude: position.latitude, longitude: position.longitude }}
+                title="Your Position"
+                description={`Accuracy: ±${Math.round(position.accuracy || 10)}m`}
+              >
+                <View style={styles.customPin}>
+                  <View style={styles.pinOuterPulse} />
+                  <View style={styles.pinInnerCore} />
+                </View>
+              </MarkerComponent>
+            )}
+          </MapViewComponent>
+        ) : (
+          /* Web & Radar Fallback Screen */
+          <View style={styles.radarScreen}>
+            <View style={styles.radarRing1}>
+              <View style={styles.radarRing2}>
+                <View style={styles.radarCenterPin}>
+                  <Ionicons name="navigate" size={24} color={Palette.accentTeal} />
+                </View>
+              </View>
+            </View>
+            <Text style={styles.radarStatus}>
+              {tracking ? '🛰️ SATELLITE MESH LOCKED' : 'GPS STANDBY'}
             </Text>
-            <Text style={styles.diagnosisP}>
-              <Text style={styles.bold}>To enable embedded MapView:</Text> Add your Google Cloud Maps SDK key in <Text style={styles.code}>app.json</Text> under <Text style={styles.code}>android.config.googleMaps.apiKey</Text>. SafeNest&apos;s fail-safe design guarantees the app never crashes if the key is missing or invalid.
+            {position && (
+              <Text style={styles.radarCoords}>
+                {position.latitude.toFixed(5)}, {position.longitude.toFixed(5)}
+              </Text>
+            )}
+          </View>
+        )}
+
+        {/* Floating Map Overlays */}
+        <View style={styles.floatingOverlayTop}>
+          <View style={styles.overlayPill}>
+            <Ionicons name="radio" size={12} color={tracking ? Palette.accentLime : Palette.textMuted} />
+            <Text style={styles.overlayPillText}>
+              {tracking ? 'REFRESHING: 4S' : 'GNSS READY'}
             </Text>
           </View>
-        ) : (
-          <Text style={styles.diagnosisSummary}>
-            External Google Maps intent active: 100% reliable, zero API key crashes.
+          {lastUpdated && (
+            <View style={styles.overlayPill}>
+              <Text style={styles.overlayPillText}>PING: {lastUpdated}</Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.floatingOverlayBottom}>
+          <TouchableOpacity style={styles.mapActionIcon} onPress={openInMaps}>
+            <Ionicons name="map" size={16} color={Palette.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.mapActionIcon} onPress={copyCoordinates}>
+            <Ionicons name="copy-outline" size={16} color={Palette.textPrimary} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Main GPS Toggle Controls */}
+      <View style={styles.controlsRow}>
+        <TacticalButton
+          label={tracking ? 'Stop GPS Tracking' : 'Start Live GPS Tracking'}
+          variant={tracking ? 'secondary' : 'primary'}
+          icon={<Ionicons name={tracking ? 'pause' : 'play'} size={16} color={tracking ? Palette.textPrimary : '#0A0C10'} />}
+          onPress={tracking ? stopTracking : startTracking}
+          loading={loading}
+          style={styles.primaryControlBtn}
+        />
+        <TacticalButton
+          label={activeShareId ? 'Manage Stream' : 'Share Live Stream'}
+          variant="glass"
+          icon={<Ionicons name="cloud-upload-outline" size={16} color={Palette.accentTeal} />}
+          onPress={handleStartLiveSharing}
+          loading={sharingLoading}
+          style={styles.secondaryControlBtn}
+        />
+      </View>
+
+      {/* High-Precision Telemetry Readout Deck */}
+      <View style={styles.telemetryGridHeader}>
+        <Text style={styles.gridSectionTitle}>GNSS TELEMETRY CHIPS</Text>
+        <Text style={styles.gridSectionMeta}>{position ? 'CALIBRATED' : 'WAITING'}</Text>
+      </View>
+
+      <View style={styles.telemetryGrid}>
+        <GlassCard style={styles.telemetryCard}>
+          <Text style={styles.chipLabel}>LATITUDE</Text>
+          <Text style={styles.chipValue}>{position ? position.latitude.toFixed(6) : '—'}</Text>
+        </GlassCard>
+
+        <GlassCard style={styles.telemetryCard}>
+          <Text style={styles.chipLabel}>LONGITUDE</Text>
+          <Text style={styles.chipValue}>{position ? position.longitude.toFixed(6) : '—'}</Text>
+        </GlassCard>
+
+        <GlassCard style={styles.telemetryCard}>
+          <Text style={styles.chipLabel}>ACCURACY</Text>
+          <Text style={[styles.chipValue, { color: Palette.accentTeal }]}>
+            {position?.accuracy ? `±${Math.round(position.accuracy)}m` : 'Balanced'}
           </Text>
-        )}
+        </GlassCard>
+
+        <GlassCard style={styles.telemetryCard}>
+          <Text style={styles.chipLabel}>VELOCITY / SPEED</Text>
+          <Text style={styles.chipValue}>
+            {position?.speed && position.speed > 0
+              ? `${(position.speed * 3.6).toFixed(1)} km/h`
+              : 'Stationary'}
+          </Text>
+        </GlassCard>
+      </View>
+
+      {/* Quick Action Matrix */}
+      <View style={styles.actionPillRow}>
+        <TouchableOpacity style={styles.pillAction} onPress={openInMaps}>
+          <Ionicons name="open-outline" size={15} color={Palette.accentLime} />
+          <Text style={styles.pillActionText}>Open Google Maps</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.pillAction} onPress={copyCoordinates}>
+          <Ionicons name="copy-outline" size={15} color={Palette.accentTeal} />
+          <Text style={styles.pillActionText}>Copy Coordinates</Text>
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: '#100D20',
+    backgroundColor: Palette.bgPrimary,
   },
   content: {
-    padding: 20,
-    paddingTop: 55,
-    paddingBottom: 40,
+    paddingHorizontal: Spacing.four,
+    paddingTop: Platform.select({ ios: 60, android: 45 }) ?? 45,
+    paddingBottom: 110,
   },
-  headerRow: {
+  topNav: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: Spacing.four,
   },
-  headerRight: {
+  backBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: Radius.md,
+    backgroundColor: Palette.bgElevated,
+    borderWidth: 1,
+    borderColor: Palette.borderSubtle,
   },
-  backButton: {
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  backButtonText: {
-    color: '#A78BFA',
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  networkBadge: {
-    fontSize: 11,
+  backBtnText: {
+    color: Palette.textPrimary,
+    fontSize: 13,
     fontWeight: '700',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
   },
-  networkOnline: {
-    color: '#86EFAC',
-    backgroundColor: '#163323',
+  statusPillsRow: {
+    flexDirection: 'row',
+    gap: 6,
   },
-  networkOffline: {
-    color: '#FDBA74',
-    backgroundColor: '#382215',
+  editorialHeader: {
+    marginBottom: Spacing.four,
   },
-  statusBadge: {
+  kicker: {
+    color: Palette.accentTeal,
     fontSize: 11,
-    fontWeight: '700',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  statusActive: {
-    color: '#86EFAC',
-    backgroundColor: '#1A382A',
-  },
-  statusInactive: {
-    color: '#BDB6D0',
-    backgroundColor: '#211B36',
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginBottom: 6,
   },
   heading: {
-    color: '#FFFFFF',
-    fontSize: 27,
-    fontWeight: 'bold',
+    color: Palette.textPrimary,
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    marginBottom: 6,
   },
-  subtitle: {
-    color: '#BDB6D0',
-    marginTop: 8,
-    marginBottom: 20,
-    lineHeight: 21,
+  subheading: {
+    color: Palette.textSecondary,
     fontSize: 14,
+    lineHeight: 20,
   },
 
   // Active Share Banner
-  activeShareBanner: {
-    backgroundColor: '#1F3328',
-    borderColor: '#22C55E',
-    borderWidth: 1.5,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
+  activeShareCard: {
+    marginBottom: Spacing.four,
   },
   activeShareHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: Spacing.two,
+  },
+  activeSharePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Palette.accentTeal,
   },
   activeShareTitle: {
-    color: '#86EFAC',
-    fontSize: 13,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  revokeSmallBtn: {
-    backgroundColor: '#3E1D27',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  revokeSmallText: {
-    color: '#FF6B6B',
+    color: Palette.accentTeal,
     fontSize: 11,
-    fontWeight: 'bold',
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  revokeBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: Radius.sm,
+    backgroundColor: Palette.accentCoralSoft,
+  },
+  revokeText: {
+    color: Palette.accentCoral,
+    fontSize: 11,
+    fontWeight: '700',
   },
   activeShareSub: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    marginTop: 4,
+    color: Palette.textSecondary,
+    fontSize: 12,
+    marginBottom: 4,
   },
-  boldText: {
-    fontWeight: 'bold',
-    color: '#86EFAC',
+  monoText: {
+    color: Palette.textPrimary,
+    fontWeight: '700',
+    fontFamily: Platform.select({ ios: 'Courier', default: 'monospace' }),
   },
   activeShareDesc: {
-    color: '#C4E1D0',
+    color: Palette.textMuted,
     fontSize: 12,
-    marginTop: 2,
-    marginBottom: 12,
+    lineHeight: 16,
+    marginBottom: Spacing.three,
   },
-  shareActionRow: {
+  shareActions: {
     flexDirection: 'row',
     gap: 10,
   },
-  viewPortalBtn: {
+  shareActionBtn: {
     flex: 1,
-    backgroundColor: '#2B7A4B',
-    padding: 11,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  viewPortalText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 12,
-  },
-  shareSmsBtn: {
-    flex: 1,
-    backgroundColor: '#372A5C',
-    padding: 11,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  shareSmsText: {
-    color: '#D8C9FF',
-    fontWeight: 'bold',
-    fontSize: 12,
+    minHeight: 44,
+    paddingVertical: 10,
   },
 
-  // Radar Visual
-  radarCard: {
-    minHeight: 220,
-    backgroundColor: '#211B36',
-    borderRadius: 22,
-    padding: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-    marginBottom: 16,
+  // MAP-FIRST CONTAINER
+  mapContainer: {
+    width: '100%',
+    height: 310,
+    borderRadius: Radius.xl,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#362B54',
+    borderColor: Palette.borderGlass,
+    backgroundColor: Palette.bgSecondary,
+    marginBottom: Spacing.four,
+    position: 'relative',
   },
-  radarRingOuter: {
-    width: 170,
-    height: 170,
-    borderRadius: 85,
-    borderWidth: 1.5,
-    borderColor: '#43346B',
+  mapView: {
+    width: '100%',
+    height: '100%',
+  },
+  customPin: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  radarRingMiddle: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 1.5,
-    borderColor: '#59448C',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  radarRingInner: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#37275E',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  radarCenterPin: {
-    fontSize: 26,
-  },
-  compassN: {
+  pinOuterPulse: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 242, 254, 0.3)',
     position: 'absolute',
-    top: 8,
-    color: '#A78BFA',
-    fontWeight: 'bold',
-    fontSize: 12,
   },
-  compassS: {
-    position: 'absolute',
-    bottom: 8,
-    color: '#A78BFA',
-    fontWeight: 'bold',
-    fontSize: 12,
-  },
-  compassW: {
-    position: 'absolute',
-    left: 12,
-    color: '#A78BFA',
-    fontWeight: 'bold',
-    fontSize: 12,
-  },
-  compassE: {
-    position: 'absolute',
-    right: 12,
-    color: '#A78BFA',
-    fontWeight: 'bold',
-    fontSize: 12,
-  },
-  radarStatusText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginTop: 14,
-    textAlign: 'center',
-  },
-  radarSubText: {
-    color: '#A78BFA',
-    fontSize: 11,
-    marginTop: 4,
-    textAlign: 'center',
+  pinInnerCore: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: Palette.accentTeal,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
 
-  // Telemetry
-  infoCard: {
-    backgroundColor: '#211B36',
-    padding: 18,
-    borderRadius: 16,
-    marginBottom: 16,
+  // Radar Fallback Screen
+  radarScreen: {
+    flex: 1,
+    backgroundColor: Palette.bgSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  cardHeader: {
-    color: '#86EFAC',
-    fontWeight: '900',
+  radarRing1: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 242, 254, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radarRing2: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 242, 254, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 242, 254, 0.05)',
+  },
+  radarCenterPin: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Palette.accentTealSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radarStatus: {
+    color: Palette.accentTeal,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginTop: Spacing.three,
+  },
+  radarCoords: {
+    color: Palette.textMuted,
+    fontSize: 12,
+    fontFamily: Platform.select({ ios: 'Courier', default: 'monospace' }),
+    marginTop: 4,
+  },
+
+  // Overlays
+  floatingOverlayTop: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    right: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  overlayPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(10, 12, 16, 0.82)',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: Palette.borderSubtle,
+  },
+  overlayPillText: {
+    color: Palette.textPrimary,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  floatingOverlayBottom: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  mapActionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(10, 12, 16, 0.88)',
+    borderWidth: 1,
+    borderColor: Palette.borderGlass,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Controls Row
+  controlsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: Spacing.four,
+  },
+  primaryControlBtn: {
+    flex: 1.3,
+  },
+  secondaryControlBtn: {
+    flex: 1,
+  },
+
+  // Telemetry Grid
+  telemetryGridHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.two,
+  },
+  gridSectionTitle: {
+    color: Palette.textSecondary,
     fontSize: 11,
-    letterSpacing: 1,
-    marginBottom: 12,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+  },
+  gridSectionMeta: {
+    color: Palette.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
   },
   telemetryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
     gap: 10,
+    marginBottom: Spacing.four,
   },
-  telemetryItem: {
-    width: '48%',
-    backgroundColor: '#2A2244',
-    padding: 12,
-    borderRadius: 10,
+  telemetryCard: {
+    width: '48.5%',
+    padding: Spacing.three,
   },
-  telemetryLabel: {
-    color: '#BDB6D0',
-    fontSize: 11,
-    fontWeight: '600',
+  chipLabel: {
+    color: Palette.textMuted,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 4,
   },
-  telemetryValue: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginTop: 4,
-  },
-  emptyDetails: {
-    color: '#BDB6D0',
-    fontSize: 13,
-    lineHeight: 19,
-  },
-
-  // Buttons
-  primaryButton: {
-    backgroundColor: '#8B5CF6',
-    padding: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    minHeight: 52,
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  stopButton: {
-    backgroundColor: '#D83D59',
-  },
-  disabledButton: {
-    opacity: 0.6,
-  },
-  primaryButtonText: {
-    color: '#FFFFFF',
+  chipValue: {
+    color: Palette.textPrimary,
     fontSize: 15,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  shareLiveButton: {
-    backgroundColor: '#10B981',
-    padding: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    minHeight: 52,
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  shareLiveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  revokeButton: {
-    backgroundColor: '#D83D59',
-    padding: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    minHeight: 52,
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  revokeButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  actionsContainer: {
-    gap: 10,
-    marginBottom: 16,
-  },
-  mapsButton: {
-    backgroundColor: '#2563EB',
-    padding: 15,
-    borderRadius: 13,
-    alignItems: 'center',
-    minHeight: 50,
-    justifyContent: 'center',
-  },
-  mapsButtonText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  shareButton: {
-    borderWidth: 1.5,
-    borderColor: '#8B5CF6',
-    padding: 15,
-    borderRadius: 13,
-    alignItems: 'center',
-    minHeight: 50,
-    justifyContent: 'center',
-  },
-  shareButtonText: {
-    color: '#D8C9FF',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-
-  // Diagnosis Box
-  diagnosisCard: {
-    backgroundColor: '#1C162E',
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#2D234A',
-    marginTop: 8,
-  },
-  diagnosisHeader: {
-    minHeight: 36,
-    justifyContent: 'center',
-  },
-  diagnosisTitle: {
-    color: '#A78BFA',
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  diagnosisSummary: {
-    color: '#8E87A5',
-    fontSize: 12,
-    marginTop: 4,
-    lineHeight: 17,
-  },
-  diagnosisBody: {
-    marginTop: 10,
-    borderTopWidth: 1,
-    borderColor: '#2D234A',
-    paddingTop: 10,
-  },
-  diagnosisP: {
-    color: '#C7C0D8',
-    fontSize: 12,
-    lineHeight: 18,
-    marginBottom: 8,
-  },
-  bold: {
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  code: {
-    color: '#86EFAC',
+    fontWeight: '700',
     fontFamily: Platform.select({ ios: 'Courier', default: 'monospace' }),
+  },
+
+  // Action Pills
+  actionPillRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: Spacing.four,
+  },
+  pillAction: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: Radius.md,
+    backgroundColor: Palette.bgCard,
+    borderWidth: 1,
+    borderColor: Palette.borderSubtle,
+  },
+  pillActionText: {
+    color: Palette.textPrimary,
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

@@ -1,9 +1,7 @@
-import * as Location from 'expo-location';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Clipboard,
   Linking,
   Modal,
   Platform,
@@ -14,6 +12,16 @@ import {
   Vibration,
   View,
 } from 'react-native';
+import * as Location from 'expo-location';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
+import { Ionicons } from '@expo/vector-icons';
+
+import { Palette, Radius, Spacing } from '@/constants/theme';
+import { GlassCard } from '@/components/ui/glass-card';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { TacticalButton } from '@/components/ui/tactical-button';
+import { OnboardingModal } from '@/components/ui/onboarding-modal';
 import {
   startLiveSharing,
   stopLiveSharing,
@@ -31,10 +39,10 @@ const STORAGE_KEY = 'safenest_trusted_contacts';
 const COUNTDOWN_SECONDS = 5;
 
 const EMERGENCY_SERVICES = [
-  { name: 'National Emergency', number: '112', icon: '🚨' },
-  { name: 'Police', number: '100', icon: '👮' },
-  { name: 'Women Helpline', number: '1091', icon: '🛡️' },
-  { name: 'Ambulance', number: '108', icon: '🚑' },
+  { name: 'National Emergency', number: '112', icon: 'shield-alert', desc: 'Central Dispatch & Police' },
+  { name: 'Police Direct', number: '100', icon: 'car-sport', desc: 'Immediate Law Enforcement' },
+  { name: 'Women Helpline', number: '1091', icon: 'people', desc: '24/7 Dedicated Women Security' },
+  { name: 'Ambulance & Trauma', number: '108', icon: 'medkit', desc: 'Medical Emergency Unit' },
 ];
 
 export default function HomeScreen() {
@@ -109,7 +117,7 @@ export default function HomeScreen() {
       try {
         Vibration.vibrate(pattern);
       } catch {
-        // Ignore on unsupported platforms
+        // Fallback
       }
     }
   }
@@ -153,7 +161,7 @@ export default function HomeScreen() {
 
     Alert.alert(
       'SOS Alert Cancelled',
-      'The emergency countdown has been stopped. No alerts were sent. You are safe.',
+      'The emergency countdown was stopped. No alerts were dispatched. You are safe.',
       [{ text: 'OK' }]
     );
   }
@@ -203,7 +211,6 @@ export default function HomeScreen() {
           setSosCloudSynced(cloudSynced);
           sosShareIdRef.current = shareId;
         } catch {
-          // Handled in offline mode
           setSosCloudSynced(false);
         }
 
@@ -229,7 +236,7 @@ export default function HomeScreen() {
         );
       }
     } catch {
-      // Location retrieval error handled gracefully
+      // Handled quietly
     }
 
     // Refresh contacts from storage
@@ -239,7 +246,7 @@ export default function HomeScreen() {
         setContacts(JSON.parse(saved) as TrustedContact[]);
       }
     } catch {
-      // Keep existing contacts
+      // Fallback
     }
   }
 
@@ -267,7 +274,7 @@ export default function HomeScreen() {
             setSosLocation(null);
             setSosTimestamp(null);
             triggerVibration(200);
-            Alert.alert('SOS Deactivated', 'SafeNest has returned to normal ready state.');
+            Alert.alert('SOS Deactivated', 'SafeNest has returned to ready state.');
           },
         },
       ]
@@ -276,16 +283,16 @@ export default function HomeScreen() {
 
   // Call Emergency Number
   async function callNumber(phone: string) {
-    const url = `tel:${phone}`;
+    const url = `tel:` + phone;
     try {
       const supported = await Linking.canOpenURL(url);
       if (supported) {
         await Linking.openURL(url);
       } else {
-        Alert.alert('Calling Unavailable', `Cannot place calls directly on this device: ${phone}`);
+        Alert.alert('Calling Unavailable', 'Cannot place calls directly on this device: ' + phone);
       }
     } catch {
-      Alert.alert('Error', `Could not initiate call to ${phone}`);
+      Alert.alert('Error', 'Could not initiate call to ' + phone);
     }
   }
 
@@ -296,10 +303,10 @@ export default function HomeScreen() {
       return;
     }
 
-    const liveLink = sosShareId ? `\nLive Tracking Stream: https://safenest-98008.firebaseapp.com/track?id=${sosShareId}` : '';
-    const mapUrl = `https://maps.google.com/?q=${sosLocation.latitude},${sosLocation.longitude}`;
-    const message = `EMERGENCY (SafeNest SOS): I need help. My current location is: Lat ${sosLocation.latitude.toFixed(5)}, Long ${sosLocation.longitude.toFixed(5)}.${liveLink}\nGoogle Maps: ${mapUrl}`;
-    const smsUrl = `sms:?body=${encodeURIComponent(message)}`;
+    const liveLink = sosShareId ? '\nLive Tracking Stream: https://safenest-98008.firebaseapp.com/track?id=' + sosShareId : '';
+    const mapUrl = 'https://maps.google.com/?q=' + sosLocation.latitude + ',' + sosLocation.longitude;
+    const message = 'EMERGENCY (SafeNest SOS): I need help. My current location is: Lat ' + sosLocation.latitude.toFixed(5) + ', Long ' + sosLocation.longitude.toFixed(5) + '.' + liveLink + '\nGoogle Maps: ' + mapUrl;
+    const smsUrl = 'sms:?body=' + encodeURIComponent(message);
 
     try {
       const canOpen = await Linking.canOpenURL(smsUrl);
@@ -313,864 +320,998 @@ export default function HomeScreen() {
     }
   }
 
+  function copyTrackingLink() {
+    if (sosShareId) {
+      const url = 'https://safenest-98008.firebaseapp.com/track?id=' + sosShareId;
+      Clipboard.setString(url);
+      Alert.alert('Link Copied', 'Live satellite tracking URL copied to clipboard.');
+    }
+  }
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <Text style={styles.logo} accessibilityRole="header">🛡️ SafeNest</Text>
-        <View style={styles.headerBadges}>
-          <Text style={[styles.networkBadge, isOnline ? styles.networkOnline : styles.networkOffline]}>
-            {isOnline ? '🟢 Online' : '🟠 Local Mode'}
+    <View style={styles.root}>
+      <OnboardingModal />
+
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Top Navigation & Telemetry Bar */}
+        <View style={styles.topNav}>
+          <View style={styles.brandGroup}>
+            <View style={styles.brandIconOrb}>
+              <Ionicons name="shield" size={16} color={Palette.accentLime} />
+            </View>
+            <Text style={styles.brandTitle}>SAFENEST</Text>
+          </View>
+
+          <View style={styles.topActions}>
+            <StatusBadge
+              label={isOnline ? 'SATELLITE ACTIVE' : 'LOCAL CACHE'}
+              variant={isOnline ? 'teal' : 'warning'}
+              pulse={isOnline}
+            />
+            <TouchableOpacity
+              style={styles.hotlineQuickBtn}
+              onPress={() => setEmergencyModalVisible(true)}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Emergency directory hotlines"
+            >
+              <Ionicons name="call" size={16} color={Palette.textPrimary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Editorial Title Section */}
+        <View style={styles.editorialHeader}>
+          <Text style={styles.kicker}>COMMAND CONSOLE</Text>
+          <Text style={styles.heroTitle}>
+            {sosActive ? 'Emergency Protocol\nEngaged.' : 'Autonomous\nPersonal Safety.'}
           </Text>
-          <Text
-            style={[styles.status, sosActive && styles.statusActive]}
-            accessibilityLabel={sosActive ? 'Status: Emergency SOS Active' : 'Status: Safety Dashboard Ready'}
-          >
-            {sosActive ? '🚨 SOS ACTIVE' : '● Ready'}
+          <Text style={styles.heroSubtitle}>
+            {sosActive
+              ? 'Telemetry broadcast active since ' + (sosTimestamp ?? 'now') + '. Safe circle notified.'
+              : 'Safe circle vigilant • 5s rapid dispatch ready.'}
           </Text>
         </View>
-      </View>
 
-      <Text style={styles.welcome}>Your safety, our priority.</Text>
-      <Text style={styles.subtitle}>
-        You deserve to feel safe everywhere.
-      </Text>
+        {/* Active Emergency SOS Banner (when triggered) */}
+        {sosActive && (
+          <GlassCard variant="danger" style={styles.sosActiveCard}>
+            <View style={styles.sosCardHeader}>
+              <View style={styles.sosPulseBadge}>
+                <View style={styles.pulseDot} />
+                <Text style={styles.sosCardTitle}>ACTIVE EMERGENCY BROADCAST</Text>
+              </View>
+              <StatusBadge
+                label={sosCloudSynced ? 'CLOUD SYNCED' : 'LOCAL ONLY'}
+                variant={sosCloudSynced ? 'lime' : 'warning'}
+              />
+            </View>
 
-      {/* SOS Active Emergency Banner */}
-      {sosActive ? (
-        <View style={styles.sosActiveBanner} accessible={true} accessibilityRole="alert">
-          <Text style={styles.sosActiveTitle}>🚨 EMERGENCY SOS TRIGGERED</Text>
-          <Text style={styles.sosActiveSubtitle}>
-            Emergency alert demonstration active since {sosTimestamp}
-          </Text>
+            {sosShareId && (
+              <View style={styles.sessionLinkBox}>
+                <View style={styles.sessionLinkMeta}>
+                  <Text style={styles.sessionLinkLabel}>BEARER STREAM ID</Text>
+                  <Text style={styles.sessionIdText}>{sosShareId}</Text>
+                </View>
+                <View style={styles.sessionLinkButtons}>
+                  <TouchableOpacity style={styles.miniBtn} onPress={copyTrackingLink}>
+                    <Ionicons name="copy-outline" size={14} color={Palette.textPrimary} />
+                    <Text style={styles.miniBtnText}>Copy Link</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.miniBtn, styles.miniBtnPrimary]}
+                    onPress={() => router.push({ pathname: '/track', params: { id: sosShareId } })}
+                  >
+                    <Ionicons name="open-outline" size={14} color={Palette.accentLime} />
+                    <Text style={[styles.miniBtnText, { color: Palette.accentLime }]}>Open Portal</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
 
-          {/* Live Cloud Share Link if generated */}
-          {sosShareId ? (
-            <View style={styles.shareIdBadge}>
-              <Text style={styles.shareIdText}>
-                {isOnline && sosCloudSynced
-                  ? '🛰️ Real-Time Cloud Stream: '
-                  : '🟠 Offline Local Session (Syncs when online): '}
-                <Text style={styles.shareIdVal}>{sosShareId}</Text>
-              </Text>
+            {sosLocation ? (
+              <View style={styles.telemetryStrip}>
+                <Ionicons name="navigate-circle" size={18} color={Palette.accentTeal} />
+                <Text style={styles.telemetryText}>
+                  Lat {sosLocation.latitude.toFixed(5)}, Long {sosLocation.longitude.toFixed(5)} (±{Math.round(sosLocation.accuracy || 10)}m)
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.acquiringText}>📍 Acquiring high-precision GPS lock...</Text>
+            )}
+
+            {/* Dispatched Circle Checklist */}
+            <View style={styles.dispatchChecklist}>
+              <Text style={styles.dispatchTitle}>DISPATCHED SAFE CIRCLE</Text>
+              {contacts.length > 0 ? (
+                contacts.map((c) => (
+                  <View key={c.id} style={styles.contactDispatchItem}>
+                    <Ionicons name="checkmark-circle" size={16} color={Palette.accentLime} />
+                    <Text style={styles.contactDispatchName}>{c.name}</Text>
+                    <Text style={styles.contactDispatchPhone}>{c.phone}</Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.noContactsWarning}>
+                  ⚠️ No trusted contacts added yet. Tap Safe Circle below to register contacts.
+                </Text>
+              )}
+            </View>
+
+            {/* Emergency Action Buttons */}
+            <View style={styles.sosActionRow}>
+              <TacticalButton
+                label="Call 112"
+                variant="coral"
+                icon={<Ionicons name="call" size={16} color="#FFFFFF" />}
+                onPress={() => callNumber('112')}
+                style={styles.sosActionBtn}
+              />
+              <TacticalButton
+                label="Send SMS"
+                variant="secondary"
+                icon={<Ionicons name="chatbubble-ellipses" size={16} color={Palette.textPrimary} />}
+                onPress={shareCoordinates}
+                style={styles.sosActionBtn}
+              />
+            </View>
+
+            <TacticalButton
+              label="I AM SAFE — DEACTIVATE SOS"
+              variant="secondary"
+              icon={<Ionicons name="shield-checkmark" size={16} color={Palette.accentLime} />}
+              onPress={handleDeactivateSOS}
+              style={styles.deactivateBtn}
+            />
+          </GlassCard>
+        )}
+
+        {/* Tactile SOS Trigger Hub */}
+        <View style={styles.sosHubSection}>
+          <View style={[styles.radarOuterRing, sosActive && styles.radarOuterRingActive]}>
+            <View style={[styles.radarMidRing, sosActive && styles.radarMidRingActive]}>
               <TouchableOpacity
-                onPress={() => router.push(`/track?id=${sosShareId}`)}
-                style={styles.openTrackerLink}
+                style={[styles.sosButtonCore, sosActive && styles.sosButtonCoreActive]}
+                onPress={sosActive ? handleDeactivateSOS : handleStartSOS}
+                activeOpacity={0.88}
                 accessible={true}
                 accessibilityRole="button"
-                accessibilityLabel="View emergency contact tracker portal"
+                accessibilityLabel={sosActive ? 'Stop Emergency SOS' : 'Trigger Emergency SOS'}
+                accessibilityHint="Starts 5 second emergency countdown with cancellation window"
               >
-                <Text style={styles.openTrackerLinkText}>View Contact Portal ➔</Text>
+                <Ionicons
+                  name={sosActive ? 'stop-circle' : 'shield-sharp'}
+                  size={38}
+                  color={sosActive ? '#FFFFFF' : Palette.accentCoral}
+                />
+                <Text style={[styles.sosButtonLabel, sosActive && styles.sosButtonLabelActive]}>
+                  {sosActive ? 'DEACTIVATE' : 'SOS'}
+                </Text>
+                <Text style={styles.sosSubLabel}>
+                  {sosActive ? 'TAP WHEN SAFE' : '5S DISPATCH'}
+                </Text>
               </TouchableOpacity>
             </View>
-          ) : null}
-
-          <View style={styles.dispatchBox}>
-            <Text style={styles.dispatchHeader}>Dispatched Safe Circle:</Text>
-            {contacts.length > 0 ? (
-              contacts.map((c) => (
-                <Text key={c.id} style={styles.dispatchedContact}>
-                  ✓ {c.name} ({c.phone}) - Simulated SMS Dispatched
-                </Text>
-              ))
-            ) : (
-              <Text style={styles.dispatchedContact}>
-                {"⚠️ No trusted contacts added yet. Tap 'Trusted Contacts' below to add people you trust."}
-              </Text>
-            )}
           </View>
-
-          {sosLocation ? (
-            <View style={styles.locationBox}>
-              <Text style={styles.locationText}>
-                📍 Captured Location: {sosLocation.latitude.toFixed(5)}, {sosLocation.longitude.toFixed(5)}
-              </Text>
-              <Text style={styles.accuracyText}>
-                Accuracy: {sosLocation.accuracy ? `±${Math.round(sosLocation.accuracy)}m` : 'Balanced'}
-              </Text>
-            </View>
-          ) : (
-            <Text style={styles.acquiringText}>📍 Acquiring GPS coordinates...</Text>
-          )}
-
-          <View style={styles.actionRow}>
-            <TouchableOpacity
-              style={styles.call112Button}
-              onPress={() => callNumber('112')}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Call 112 emergency services"
-              activeOpacity={0.85}
-            >
-              <Text style={styles.call112Text}>📞 Call 112</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.shareCoordsButton}
-              onPress={shareCoordinates}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Share emergency coordinates via SMS"
-              activeOpacity={0.85}
-            >
-              <Text style={styles.shareCoordsText}>✉️ Send SMS</Text>
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity
-            style={styles.deactivateButton}
-            onPress={handleDeactivateSOS}
-            accessible={true}
-            accessibilityRole="button"
-            accessibilityLabel="Deactivate emergency SOS, I am safe now"
-            activeOpacity={0.85}
-          >
-            <Text style={styles.deactivateText}>✓ I AM SAFE — DEACTIVATE SOS</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={styles.connection}>
-          <Text style={styles.connectionText}>🟢 App is ready</Text>
-          <Text style={styles.smallText}>
-            SOS triggers instant 5-second countdown with cancellation
+          <Text style={styles.sosInstruction}>
+            {sosActive
+              ? 'Telemetry streaming live to cloud and emergency contacts.'
+              : 'Tap to initiate instant 5s dispatch countdown with safe cancel window.'}
           </Text>
         </View>
-      )}
 
-      {/* Main SOS Trigger Button */}
-      <View style={styles.sosContainer}>
-        <Text style={styles.sosTitle}>
-          {sosActive ? 'Emergency Mode Active' : 'Need emergency help?'}
-        </Text>
-        <TouchableOpacity
-          style={[styles.sosButton, sosActive && styles.sosButtonActive]}
-          onPress={sosActive ? handleDeactivateSOS : handleStartSOS}
-          activeOpacity={0.8}
-          accessible={true}
-          accessibilityRole="button"
-          accessibilityLabel={
-            sosActive
-              ? 'SOS is active. Double tap to deactivate.'
-              : 'Emergency SOS button. Double tap to start 5 second emergency countdown.'
-          }
-          accessibilityHint="Starts emergency countdown with option to cancel"
-        >
-          <Text style={styles.sosText}>{sosActive ? 'SAFE' : 'SOS'}</Text>
-          <Text style={styles.sosSubtext}>
-            {sosActive ? 'TAP TO STOP' : 'TAP FOR 5S COUNTDOWN'}
-          </Text>
-        </TouchableOpacity>
-        <Text style={styles.sosDescription}>
-          {sosActive
-            ? 'Tap the button above when you are out of danger to deactivate.'
-            : 'Tap SOS anytime. You will have 5 seconds to cancel before alerts trigger.'}
-        </Text>
-      </View>
+        {/* Live Safety Deck (Quick Telemetry Widgets) */}
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionHeading}>DEFENSE SENTINELS</Text>
+          <Text style={styles.sectionMeta}>REAL-TIME</Text>
+        </View>
 
-      <Text style={styles.sectionTitle}>Your Safety Tools</Text>
+        <View style={styles.deckRow}>
+          {/* Live GPS Telemetry Widget */}
+          <GlassCard style={styles.deckWidget}>
+            <TouchableOpacity onPress={() => router.push('/location')} activeOpacity={0.85}>
+              <View style={styles.widgetTop}>
+                <View style={[styles.widgetIconOrb, { backgroundColor: Palette.accentTealSoft }]}>
+                  <Ionicons name="navigate" size={18} color={Palette.accentTeal} />
+                </View>
+                <StatusBadge label="LIVE" variant="teal" />
+              </View>
+              <Text style={styles.widgetTitle}>Satellite GPS</Text>
+              <Text style={styles.widgetDesc}>High-precision telemetry & bearer sharing</Text>
+              <View style={styles.widgetFooter}>
+                <Text style={styles.widgetActionText}>View Live Map</Text>
+                <Ionicons name="arrow-forward" size={14} color={Palette.accentTeal} />
+              </View>
+            </TouchableOpacity>
+          </GlassCard>
 
-      {/* 2x2 Grid of Safety Tools + Live Tracker */}
-      <View style={styles.grid}>
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => router.push('/contacts')}
-          accessible={true}
-          accessibilityRole="button"
-          accessibilityLabel="Trusted Contacts. Manage your safe circle."
-          activeOpacity={0.8}
-        >
-          <Text style={styles.cardIcon}>👥</Text>
-          <Text style={styles.cardTitle}>Trusted Contacts</Text>
-          <Text style={styles.cardDescription}>
-            Manage your safe circle ({contacts.length} saved)
-          </Text>
-        </TouchableOpacity>
+          {/* Safe Arrival Timer Widget */}
+          <GlassCard style={styles.deckWidget}>
+            <TouchableOpacity onPress={() => router.push('/timer')} activeOpacity={0.85}>
+              <View style={styles.widgetTop}>
+                <View style={[styles.widgetIconOrb, { backgroundColor: Palette.accentLimeSoft }]}>
+                  <Ionicons name="timer" size={18} color={Palette.accentLime} />
+                </View>
+                <StatusBadge label="READY" variant="lime" />
+              </View>
+              <Text style={styles.widgetTitle}>Arrival Watch</Text>
+              <Text style={styles.widgetDesc}>Autonomous overdue escalation sentinel</Text>
+              <View style={styles.widgetFooter}>
+                <Text style={[styles.widgetActionText, { color: Palette.accentLime }]}>Configure</Text>
+                <Ionicons name="arrow-forward" size={14} color={Palette.accentLime} />
+              </View>
+            </TouchableOpacity>
+          </GlassCard>
+        </View>
 
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => router.push('/location')}
-          accessible={true}
-          accessibilityRole="button"
-          accessibilityLabel="My Location. View GPS status and coordinates."
-          activeOpacity={0.8}
-        >
-          <Text style={styles.cardIcon}>📍</Text>
-          <Text style={styles.cardTitle}>My Location</Text>
-          <Text style={styles.cardDescription}>Live GPS & Sharing</Text>
-        </TouchableOpacity>
+        {/* Command Matrix Grid */}
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionHeading}>SECURITY SERVICES</Text>
+          <Text style={styles.sectionMeta}>{contacts.length} IN CIRCLE</Text>
+        </View>
 
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => router.push('/timer')}
-          accessible={true}
-          accessibilityRole="button"
-          accessibilityLabel="Safety Timer. Plan your safe arrival."
-          activeOpacity={0.8}
-        >
-          <Text style={styles.cardIcon}>⏱️</Text>
-          <Text style={styles.cardTitle}>Safety Timer</Text>
-          <Text style={styles.cardDescription}>
-            Plan your safe arrival
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => router.push('/track')}
-          accessible={true}
-          accessibilityRole="button"
-          accessibilityLabel="Live Tracking Portal for emergency contacts"
-          activeOpacity={0.8}
-        >
-          <Text style={styles.cardIcon}>🛰️</Text>
-          <Text style={styles.cardTitle}>Live Tracker</Text>
-          <Text style={styles.cardDescription}>
-            Contact tracking portal
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.card, styles.cardFullWidth]}
-          onPress={() => setEmergencyModalVisible(true)}
-          accessible={true}
-          accessibilityRole="button"
-          accessibilityLabel="Emergency Help. View emergency directory hotlines."
-          activeOpacity={0.8}
-        >
-          <View style={styles.hotlineRowCard}>
-            <Text style={styles.cardIcon}>🚨</Text>
-            <View>
-              <Text style={styles.cardTitle}>Emergency Hotlines</Text>
-              <Text style={styles.cardDescription}>
-                1-tap direct access to 112, Police (100), Ambulance (108)
+        <View style={styles.matrixGrid}>
+          {/* Safe Circle / Contacts */}
+          <GlassCard style={styles.matrixCard}>
+            <TouchableOpacity onPress={() => router.push('/contacts')} activeOpacity={0.85}>
+              <View style={styles.matrixCardTop}>
+                <Ionicons name="people" size={24} color={Palette.accentLime} />
+                <View style={styles.countBadge}>
+                  <Text style={styles.countBadgeText}>{contacts.length}</Text>
+                </View>
+              </View>
+              <Text style={styles.matrixTitle}>Safe Circle</Text>
+              <Text style={styles.matrixSubtitle}>
+                {contacts.length > 0 ? contacts.length + ' trusted members receiving SMS' : 'No contacts configured'}
               </Text>
-            </View>
-          </View>
-        </TouchableOpacity>
-      </View>
+            </TouchableOpacity>
+          </GlassCard>
 
-      <Text style={styles.footer}>
-        SafeNest • Safety without boundaries
-      </Text>
+          {/* Live Tracker Portal */}
+          <GlassCard style={styles.matrixCard}>
+            <TouchableOpacity onPress={() => router.push('/track')} activeOpacity={0.85}>
+              <View style={styles.matrixCardTop}>
+                <Ionicons name="globe-outline" size={24} color={Palette.accentTeal} />
+                <Ionicons name="chevron-forward" size={16} color={Palette.textMuted} />
+              </View>
+              <Text style={styles.matrixTitle}>Live Tracker</Text>
+              <Text style={styles.matrixSubtitle}>Browser-viewable telemetry stream portal</Text>
+            </TouchableOpacity>
+          </GlassCard>
 
-      {/* SOS 5-Second Countdown Modal */}
-      <Modal
-        visible={countingDown}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={handleCancelSOS}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.countdownBox} accessible={true} accessibilityRole="alert">
-            <Text style={styles.countdownAlertIcon}>🚨</Text>
-            <Text style={styles.countdownTitle}>EMERGENCY ALERT</Text>
-            <Text style={styles.countdownSubtitle}>
-              Alerting your emergency contacts in
-            </Text>
-
-            <View style={styles.timerCircle}>
-              <Text style={styles.timerNumber}>{countdown}</Text>
-              <Text style={styles.timerSec}>SECONDS</Text>
-            </View>
-
-            <Text style={styles.countdownWarning}>
-              If this was a mistake or you are safe, cancel now.
-            </Text>
-
-            {/* Cancel Button */}
+          {/* Emergency Directory Full Width */}
+          <GlassCard style={[styles.matrixCard, styles.matrixCardFull]}>
             <TouchableOpacity
-              style={styles.cancelButton}
+              onPress={() => setEmergencyModalVisible(true)}
+              activeOpacity={0.85}
+              style={styles.hotlinesRow}
+            >
+              <View style={styles.hotlineLeft}>
+                <View style={[styles.widgetIconOrb, { backgroundColor: Palette.accentCoralSoft }]}>
+                  <Ionicons name="flash" size={20} color={Palette.accentCoral} />
+                </View>
+                <View>
+                  <Text style={styles.matrixTitle}>Direct Emergency Hotlines</Text>
+                  <Text style={styles.matrixSubtitle}>1-touch direct dial to 112, Police (100), Ambulance (108)</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={Palette.textSecondary} />
+            </TouchableOpacity>
+          </GlassCard>
+        </View>
+
+        {/* Editorial Footer */}
+        <View style={styles.footerBrand}>
+          <Text style={styles.footerText}>SAFENEST SECURITY PLATFORM</Text>
+          <Text style={styles.footerSub}>Autonomous protection without boundaries</Text>
+        </View>
+      </ScrollView>
+
+      {/* 5-Second Rapid Countdown Modal */}
+      <Modal visible={countingDown} transparent={true} animationType="fade" onRequestClose={handleCancelSOS}>
+        <View style={styles.countdownBackdrop}>
+          <View style={styles.countdownCard}>
+            <View style={styles.countdownBadge}>
+              <Text style={styles.countdownBadgeText}>EMERGENCY PROTOCOL ENGAGED</Text>
+            </View>
+
+            <Text style={styles.countdownHeadline}>Dispatching Alert In</Text>
+
+            <View style={styles.countdownRing}>
+              <Text style={styles.countdownNumber}>{countdown}</Text>
+              <Text style={styles.countdownUnit}>SECONDS</Text>
+            </View>
+
+            <Text style={styles.countdownWarn}>
+              If you triggered this by accident or are completely safe, cancel immediately.
+            </Text>
+
+            <TacticalButton
+              label="✕ CANCEL — I AM SAFE"
+              variant="secondary"
               onPress={handleCancelSOS}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel emergency countdown. I am safe."
-              accessibilityHint="Double tap to cancel the emergency alert immediately"
-              activeOpacity={0.85}
-            >
-              <Text style={styles.cancelButtonText}>✕ CANCEL — I AM SAFE</Text>
-            </TouchableOpacity>
+              style={styles.cancelCountdownBtn}
+            />
 
-            {/* Immediate Send Button */}
-            <TouchableOpacity
-              style={styles.immediateButton}
+            <TacticalButton
+              label="⚡ DISPATCH NOW WITHOUT WAITING"
+              variant="coral"
               onPress={handleImmediateTrigger}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Trigger emergency SOS immediately without waiting"
-              activeOpacity={0.8}
-            >
-              <Text style={styles.immediateButtonText}>SEND IMMEDIATELY ➔</Text>
-            </TouchableOpacity>
+              style={styles.immediateCountdownBtn}
+            />
           </View>
         </View>
       </Modal>
 
-      {/* Emergency Hotlines Directory Modal */}
+      {/* Emergency Hotlines Modal */}
       <Modal
         visible={emergencyModalVisible}
         transparent={true}
         animationType="slide"
         onRequestClose={() => setEmergencyModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.directoryBox}>
-            <View style={styles.directoryHeader}>
-              <Text style={styles.directoryTitle}>🚨 Emergency Hotlines</Text>
-              <TouchableOpacity
-                onPress={() => setEmergencyModalVisible(false)}
-                accessible={true}
-                accessibilityRole="button"
-                accessibilityLabel="Close emergency directory"
-                style={styles.closeModalButton}
-              >
-                <Text style={styles.closeModalText}>✕</Text>
+        <View style={styles.hotlineModalBackdrop}>
+          <View style={styles.hotlineModalSheet}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Emergency Hotlines</Text>
+              <TouchableOpacity onPress={() => setEmergencyModalVisible(false)} style={styles.sheetCloseBtn}>
+                <Ionicons name="close" size={20} color={Palette.textPrimary} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.directorySubtitle}>
-              Direct 1-tap connection to emergency helplines:
+            <Text style={styles.sheetDesc}>
+              Direct cellular telephone connection. Works even when data connectivity is degraded.
             </Text>
 
-            {EMERGENCY_SERVICES.map((s) => (
-              <TouchableOpacity
-                key={s.number}
-                style={styles.helplineRow}
-                onPress={() => callNumber(s.number)}
-                accessible={true}
-                accessibilityRole="button"
-                accessibilityLabel={`Call ${s.name} at ${s.number}`}
-                activeOpacity={0.8}
-              >
-                <View style={styles.helplineInfo}>
-                  <Text style={styles.helplineIcon}>{s.icon}</Text>
-                  <View>
-                    <Text style={styles.helplineName}>{s.name}</Text>
-                    <Text style={styles.helphoneNumber}>{s.number}</Text>
+            <View style={styles.hotlineList}>
+              {EMERGENCY_SERVICES.map((svc) => (
+                <TouchableOpacity
+                  key={svc.number}
+                  style={styles.hotlineItem}
+                  onPress={() => callNumber(svc.number)}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.hotlineItemLeft}>
+                    <View style={styles.hotlineItemIconOrb}>
+                      <Ionicons name={svc.icon as any} size={20} color={Palette.accentLime} />
+                    </View>
+                    <View>
+                      <Text style={styles.hotlineItemName}>{svc.name}</Text>
+                      <Text style={styles.hotlineItemDesc}>{svc.desc}</Text>
+                    </View>
                   </View>
-                </View>
-                <View style={styles.callBadge}>
-                  <Text style={styles.callBadgeText}>CALL</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+                  <View style={styles.hotlineDialPill}>
+                    <Ionicons name="call" size={13} color="#0A0C10" />
+                    <Text style={styles.hotlineDialText}>{svc.number}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
 
-            <TouchableOpacity
-              style={styles.doneButton}
+            <TacticalButton
+              label="Close Directory"
+              variant="secondary"
               onPress={() => setEmergencyModalVisible(false)}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Done"
-            >
-              <Text style={styles.doneButtonText}>Close Directory</Text>
-            </TouchableOpacity>
+              style={styles.sheetDoneBtn}
+            />
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: '#100D20',
+    backgroundColor: Palette.bgPrimary,
+  },
+  scroll: {
+    flex: 1,
   },
   content: {
-    padding: 22,
-    paddingTop: 10,
-    paddingBottom: 40,
-    maxWidth: 680,
-    alignSelf: 'center',
-    width: '100%',
+    paddingHorizontal: Spacing.four,
+    paddingTop: Platform.select({ ios: 60, android: 45 }) ?? 45,
+    paddingBottom: 110,
   },
-  header: {
+  topNav: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 45,
     alignItems: 'center',
+    marginBottom: Spacing.four,
   },
-  logo: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+  brandGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  headerBadges: {
+  brandIconOrb: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Palette.accentLimeSoft,
+    borderWidth: 1,
+    borderColor: 'rgba(212, 255, 58, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandTitle: {
+    color: Palette.textPrimary,
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 2.2,
+  },
+  topActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  networkBadge: {
-    fontSize: 11,
-    fontWeight: '700',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  networkOnline: {
-    color: '#86EFAC',
-    backgroundColor: '#163323',
-  },
-  networkOffline: {
-    color: '#FDBA74',
-    backgroundColor: '#382215',
-  },
-  status: {
-    color: '#A78BFA',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  statusActive: {
-    color: '#FF6B6B',
-    fontWeight: 'bold',
-  },
-  welcome: {
-    color: '#FFFFFF',
-    fontSize: 27,
-    fontWeight: 'bold',
-    marginTop: 25,
-  },
-  subtitle: {
-    color: '#B8B3C9',
-    fontSize: 14,
-    marginTop: 8,
-  },
-  connection: {
-    backgroundColor: '#211B36',
-    padding: 16,
-    borderRadius: 15,
-    marginTop: 20,
-  },
-  connectionText: {
-    color: '#86EFAC',
-    fontWeight: 'bold',
-  },
-  smallText: {
-    color: '#B8B3C9',
-    fontSize: 12,
-    marginTop: 6,
-  },
-
-  // Active SOS Banner
-  sosActiveBanner: {
-    backgroundColor: '#3E101D',
-    borderColor: '#E63955',
-    borderWidth: 2,
-    borderRadius: 16,
-    padding: 18,
-    marginTop: 20,
-  },
-  sosActiveTitle: {
-    color: '#FF4D6D',
-    fontSize: 18,
-    fontWeight: '900',
-    textAlign: 'center',
-  },
-  sosActiveSubtitle: {
-    color: '#FFCAD4',
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 4,
-    marginBottom: 12,
-  },
-  shareIdBadge: {
-    backgroundColor: '#240910',
-    padding: 10,
-    borderRadius: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  hotlineQuickBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: Palette.bgElevated,
+    borderWidth: 1,
+    borderColor: Palette.borderGlass,
     alignItems: 'center',
-    marginBottom: 10,
+    justifyContent: 'center',
   },
-  shareIdText: {
-    color: '#FFFFFF',
+  editorialHeader: {
+    marginBottom: Spacing.four,
+  },
+  kicker: {
+    color: Palette.accentLime,
     fontSize: 11,
-  },
-  shareIdVal: {
-    color: '#86EFAC',
-    fontWeight: 'bold',
-  },
-  openTrackerLink: {
-    padding: 4,
-  },
-  openTrackerLinkText: {
-    color: '#FF859A',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  dispatchBox: {
-    backgroundColor: '#260B12',
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 10,
-  },
-  dispatchHeader: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '800',
+    letterSpacing: 1.5,
     marginBottom: 6,
   },
-  dispatchedContact: {
-    color: '#98FB98',
+  heroTitle: {
+    color: Palette.textPrimary,
+    fontSize: 30,
+    fontWeight: '800',
+    lineHeight: 36,
+    letterSpacing: -0.5,
+    marginBottom: 8,
+  },
+  heroSubtitle: {
+    color: Palette.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+
+  // Active Emergency SOS Card
+  sosActiveCard: {
+    marginBottom: Spacing.four,
+  },
+  sosCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.three,
+  },
+  sosPulseBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Palette.accentCoral,
+  },
+  sosCardTitle: {
+    color: Palette.accentCoral,
     fontSize: 12,
-    marginVertical: 2,
+    fontWeight: '800',
+    letterSpacing: 1,
   },
-  locationBox: {
-    backgroundColor: '#260B12',
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 14,
-  },
-  locationText: {
-    color: '#FFFFFF',
+  sosTimestamp: {
+    color: Palette.textMuted,
     fontSize: 12,
     fontWeight: '600',
   },
-  accuracyText: {
-    color: '#B8B3C9',
-    fontSize: 11,
-    marginTop: 2,
+  sessionLinkBox: {
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: Radius.md,
+    padding: Spacing.two,
+    marginBottom: Spacing.two,
   },
-  acquiringText: {
-    color: '#FFD166',
-    fontSize: 12,
-    marginBottom: 14,
-    textAlign: 'center',
-  },
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 10,
-    marginBottom: 12,
-  },
-  call112Button: {
-    flex: 1,
-    backgroundColor: '#E63955',
-    padding: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    minHeight: 48,
-    justifyContent: 'center',
-  },
-  call112Text: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  shareCoordsButton: {
-    flex: 1,
-    backgroundColor: '#8B5CF6',
-    padding: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    minHeight: 48,
-    justifyContent: 'center',
-  },
-  shareCoordsText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  deactivateButton: {
-    backgroundColor: '#2B7A4B',
-    padding: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-    minHeight: 48,
-    justifyContent: 'center',
-  },
-  deactivateText: {
-    color: '#FFFFFF',
-    fontWeight: '900',
-    fontSize: 14,
-    letterSpacing: 0.5,
-  },
-
-  // SOS Container
-  sosContainer: {
-    alignItems: 'center',
-    backgroundColor: '#211B36',
-    padding: 22,
-    borderRadius: 22,
-    marginTop: 20,
-  },
-  sosTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  sosButton: {
-    width: 160,
-    height: 160,
-    borderRadius: 100,
-    backgroundColor: '#E63955',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 20,
-    borderWidth: 7,
-    borderColor: '#54263E',
-    shadowColor: '#E63955',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  sosButtonActive: {
-    backgroundColor: '#2B7A4B',
-    borderColor: '#1D4E31',
-    shadowColor: '#2B7A4B',
-  },
-  sosText: {
-    color: '#FFFFFF',
-    fontSize: 38,
-    fontWeight: 'bold',
-  },
-  sosSubtext: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    marginTop: 3,
-  },
-  sosDescription: {
-    color: '#B8B3C9',
-    marginTop: 16,
-    fontSize: 12,
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  sectionTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginTop: 28,
-    marginBottom: 15,
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  card: {
-    backgroundColor: '#211B36',
-    width: '48%',
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 14,
-    minHeight: 120,
-    justifyContent: 'space-between',
-  },
-  cardFullWidth: {
-    width: '100%',
-    minHeight: 80,
-  },
-  hotlineRowCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  cardIcon: {
-    fontSize: 28,
-  },
-  cardTitle: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    marginTop: 6,
-    fontSize: 14,
-  },
-  cardDescription: {
-    color: '#B8B3C9',
-    fontSize: 11,
-    marginTop: 4,
-  },
-  footer: {
-    color: '#817A96',
-    textAlign: 'center',
-    marginTop: 20,
-    marginBottom: 30,
-    fontSize: 12,
-  },
-
-  // Modal Overlay
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  countdownBox: {
-    backgroundColor: '#1E152A',
-    borderColor: '#E63955',
-    borderWidth: 2,
-    borderRadius: 24,
-    padding: 26,
-    width: '100%',
-    maxWidth: 380,
-    alignItems: 'center',
-  },
-  countdownAlertIcon: {
-    fontSize: 42,
+  sessionLinkMeta: {
     marginBottom: 8,
   },
-  countdownTitle: {
-    color: '#FF4D6D',
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: 1,
-    textAlign: 'center',
-  },
-  countdownSubtitle: {
-    color: '#E0DBEC',
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 6,
-    marginBottom: 20,
-  },
-  timerCircle: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: '#2B1220',
-    borderColor: '#E63955',
-    borderWidth: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  timerNumber: {
-    color: '#FFFFFF',
-    fontSize: 64,
-    fontWeight: '900',
-  },
-  timerSec: {
-    color: '#FF859A',
+  sessionLinkLabel: {
+    color: Palette.textMuted,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1,
   },
-  countdownWarning: {
-    color: '#B8B3C9',
-    fontSize: 12,
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  cancelButton: {
-    backgroundColor: '#2B7A4B',
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 14,
-    width: '100%',
-    alignItems: 'center',
-    minHeight: 54,
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  cancelButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  immediateButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    minHeight: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  immediateButtonText: {
-    color: '#FF859A',
+  sessionIdText: {
+    color: Palette.textPrimary,
     fontSize: 13,
     fontWeight: '700',
-    textDecorationLine: 'underline',
+    fontFamily: Platform.select({ ios: 'Courier', default: 'monospace' }),
+    marginTop: 2,
+  },
+  sessionLinkButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  miniBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: Radius.sm,
+    backgroundColor: Palette.bgElevated,
+  },
+  miniBtnPrimary: {
+    backgroundColor: 'rgba(212, 255, 58, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(212, 255, 58, 0.3)',
+  },
+  miniBtnText: {
+    color: Palette.textPrimary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  telemetryStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: Spacing.two,
+  },
+  telemetryText: {
+    color: Palette.accentTeal,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  acquiringText: {
+    color: Palette.textMuted,
+    fontSize: 12,
+    marginBottom: Spacing.two,
+  },
+  dispatchChecklist: {
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderRadius: Radius.md,
+    padding: Spacing.two,
+    marginBottom: Spacing.three,
+  },
+  dispatchTitle: {
+    color: Palette.textMuted,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  contactDispatchItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 3,
+  },
+  contactDispatchName: {
+    color: Palette.textPrimary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  contactDispatchPhone: {
+    color: Palette.textMuted,
+    fontSize: 12,
+  },
+  noContactsWarning: {
+    color: '#FBBF24',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  sosActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
+  sosActionBtn: {
+    flex: 1,
+    minHeight: 44,
+    paddingVertical: 10,
+  },
+  deactivateBtn: {
+    minHeight: 44,
+    paddingVertical: 10,
   },
 
-  // Directory Modal
-  directoryBox: {
-    backgroundColor: '#1E152A',
-    borderRadius: 24,
-    padding: 24,
+  // Tactile SOS Trigger Core
+  sosHubSection: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: Spacing.four,
+  },
+  radarOuterRing: {
+    width: 210,
+    height: 210,
+    borderRadius: 105,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(255, 255, 255, 0.015)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radarOuterRingActive: {
+    borderColor: Palette.borderCoral,
+    backgroundColor: 'rgba(255, 59, 48, 0.08)',
+  },
+  radarMidRing: {
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: Palette.bgSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radarMidRingActive: {
+    borderColor: Palette.accentCoral,
+  },
+  sosButtonCore: {
+    width: 136,
+    height: 136,
+    borderRadius: 68,
+    backgroundColor: Palette.bgElevated,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 59, 48, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: Palette.accentCoral,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  sosButtonCoreActive: {
+    backgroundColor: Palette.accentCoral,
+    borderColor: '#FFFFFF',
+    shadowOpacity: 0.5,
+  },
+  sosButtonLabel: {
+    color: Palette.accentCoral,
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 2,
+    marginTop: 2,
+  },
+  sosButtonLabelActive: {
+    color: '#FFFFFF',
+  },
+  sosSubLabel: {
+    color: Palette.textMuted,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginTop: 2,
+  },
+  sosInstruction: {
+    color: Palette.textMuted,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: Spacing.two,
+    maxWidth: 280,
+    lineHeight: 18,
+  },
+
+  // Deck Row
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: Spacing.four,
+    marginBottom: Spacing.two,
+  },
+  sectionHeading: {
+    color: Palette.textSecondary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+  },
+  sectionMeta: {
+    color: Palette.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  deckRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: Spacing.two,
+  },
+  deckWidget: {
+    flex: 1,
+    padding: Spacing.three,
+  },
+  widgetTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.two,
+  },
+  widgetIconOrb: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  widgetTitle: {
+    color: Palette.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  widgetDesc: {
+    color: Palette.textMuted,
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: Spacing.two,
+    minHeight: 32,
+  },
+  widgetFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  widgetActionText: {
+    color: Palette.accentTeal,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  // Matrix Grid
+  matrixGrid: {
+    gap: 12,
+  },
+  matrixCard: {
+    padding: Spacing.three,
+  },
+  matrixCardFull: {
+    width: '100%',
+  },
+  matrixCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.two,
+  },
+  countBadge: {
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: Radius.full,
+    backgroundColor: Palette.accentLimeSoft,
+    borderWidth: 1,
+    borderColor: 'rgba(212, 255, 58, 0.3)',
+  },
+  countBadgeText: {
+    color: Palette.accentLime,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  matrixTitle: {
+    color: Palette.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  matrixSubtitle: {
+    color: Palette.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  hotlinesRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  hotlineLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+
+  // Footer Brand
+  footerBrand: {
+    alignItems: 'center',
+    marginTop: Spacing.six,
+    marginBottom: Spacing.four,
+  },
+  footerText: {
+    color: Palette.textMuted,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 2,
+  },
+  footerSub: {
+    color: 'rgba(255, 255, 255, 0.25)',
+    fontSize: 11,
+    marginTop: 4,
+  },
+
+  // Countdown Modal
+  countdownBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(5, 7, 10, 0.94)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.four,
+  },
+  countdownCard: {
     width: '100%',
     maxWidth: 400,
+    backgroundColor: Palette.bgCard,
+    borderRadius: Radius.xl,
+    padding: Spacing.four,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Palette.borderCoral,
   },
-  directoryHeader: {
+  countdownBadge: {
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: Radius.full,
+    backgroundColor: Palette.accentCoralSoft,
+    borderWidth: 1,
+    borderColor: Palette.borderCoral,
+    marginBottom: Spacing.three,
+  },
+  countdownBadgeText: {
+    color: Palette.accentCoral,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+  },
+  countdownHeadline: {
+    color: Palette.textPrimary,
+    fontSize: 22,
+    fontWeight: '800',
+    marginBottom: Spacing.three,
+  },
+  countdownRing: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    borderWidth: 3,
+    borderColor: Palette.accentCoral,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 59, 48, 0.12)',
+    marginBottom: Spacing.three,
+  },
+  countdownNumber: {
+    color: Palette.textPrimary,
+    fontSize: 54,
+    fontWeight: '900',
+    lineHeight: 60,
+  },
+  countdownUnit: {
+    color: Palette.accentCoral,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+  },
+  countdownWarn: {
+    color: Palette.textSecondary,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: Spacing.four,
+  },
+  cancelCountdownBtn: {
+    width: '100%',
+    marginBottom: 10,
+  },
+  immediateCountdownBtn: {
+    width: '100%',
+  },
+
+  // Hotlines Sheet Modal
+  hotlineModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(5, 7, 10, 0.75)',
+    justifyContent: 'flex-end',
+  },
+  hotlineModalSheet: {
+    backgroundColor: Palette.bgElevated,
+    borderTopLeftRadius: Radius.xl,
+    borderTopRightRadius: Radius.xl,
+    padding: Spacing.four,
+    borderWidth: 1,
+    borderColor: Palette.borderGlass,
+    paddingBottom: Platform.select({ ios: 40, default: 24 }),
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignSelf: 'center',
+    marginBottom: Spacing.three,
+  },
+  sheetHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 6,
   },
-  directoryTitle: {
-    color: '#FFFFFF',
+  sheetTitle: {
+    color: Palette.textPrimary,
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '800',
   },
-  closeModalButton: {
-    padding: 6,
-    minWidth: 40,
-    minHeight: 40,
-    justifyContent: 'center',
+  sheetCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Palette.bgSurface,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  closeModalText: {
-    color: '#B8B3C9',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  directorySubtitle: {
-    color: '#B8B3C9',
+  sheetDesc: {
+    color: Palette.textSecondary,
     fontSize: 13,
-    marginBottom: 18,
+    lineHeight: 18,
+    marginBottom: Spacing.four,
   },
-  helplineRow: {
-    backgroundColor: '#29213D',
+  hotlineList: {
+    gap: 10,
+    marginBottom: Spacing.four,
+  },
+  hotlineItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 14,
-    borderRadius: 14,
-    marginBottom: 10,
-    minHeight: 60,
+    backgroundColor: Palette.bgSurface,
+    borderRadius: Radius.md,
+    padding: Spacing.three,
+    borderWidth: 1,
+    borderColor: Palette.borderSubtle,
   },
-  helplineInfo: {
+  hotlineItemLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
-  helplineIcon: {
-    fontSize: 24,
-  },
-  helplineName: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  helphoneNumber: {
-    color: '#A78BFA',
-    fontSize: 13,
-    marginTop: 2,
-    fontWeight: '600',
-  },
-  callBadge: {
-    backgroundColor: '#E63955',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  callBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  doneButton: {
-    backgroundColor: '#352C4D',
-    padding: 15,
-    borderRadius: 12,
+  hotlineItemIconOrb: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Palette.accentLimeSoft,
     alignItems: 'center',
-    marginTop: 12,
-    minHeight: 48,
     justifyContent: 'center',
   },
-  doneButtonText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 14,
+  hotlineItemName: {
+    color: Palette.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  hotlineItemDesc: {
+    color: Palette.textMuted,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  hotlineDialPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Palette.accentLime,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: Radius.full,
+  },
+  hotlineDialText: {
+    color: '#0A0C10',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  sheetDoneBtn: {
+    width: '100%',
   },
 });

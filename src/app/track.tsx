@@ -1,8 +1,8 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Linking,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,7 +10,31 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+
+import { DarkMapStyle, Palette, Radius, Spacing } from '@/constants/theme';
+import { GlassCard } from '@/components/ui/glass-card';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { TacticalButton } from '@/components/ui/tactical-button';
 import { LiveShareSession, subscribeToLiveLocation } from '@/lib/safety-service';
+
+// Safe platform-aware map loading
+let MapViewComponent: any = null;
+let MarkerComponent: any = null;
+let CircleComponent: any = null;
+
+if (Platform.OS !== 'web') {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Maps = require('react-native-maps');
+    MapViewComponent = Maps.default;
+    MarkerComponent = Maps.Marker;
+    CircleComponent = Maps.Circle;
+  } catch {
+    // Quiet fallback
+  }
+}
 
 export default function LiveTrackingViewerScreen() {
   const router = useRouter();
@@ -53,7 +77,7 @@ export default function LiveTrackingViewerScreen() {
   function handleSearch() {
     const cleanId = shareIdInput.trim();
     if (!cleanId) {
-      Alert.alert('Missing ID', 'Please enter a valid SafeNest tracking ID.');
+      Alert.alert('Missing ID', 'Please enter a valid SafeNest tracking session ID.');
       return;
     }
     setSession(null);
@@ -78,18 +102,19 @@ export default function LiveTrackingViewerScreen() {
       if (canCall) {
         await Linking.openURL(url);
       } else {
-        Alert.alert('Emergency Helpline', 'Dial 112 on your phone.');
+        Alert.alert('Emergency Helpline', 'Dial 112 on your device.');
       }
     } catch {
-      Alert.alert('Emergency Helpline', 'Dial 112 on your phone.');
+      Alert.alert('Emergency Helpline', 'Dial 112 on your device.');
     }
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.headerRow}>
+    <ScrollView style={styles.root} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      {/* Top Nav */}
+      <View style={styles.topNav}>
         <TouchableOpacity
-          style={styles.backButton}
+          style={styles.backBtn}
           onPress={() => {
             if (router.canGoBack()) {
               router.back();
@@ -101,270 +126,313 @@ export default function LiveTrackingViewerScreen() {
           accessibilityRole="button"
           accessibilityLabel="Back to previous screen"
         >
-          <Text style={styles.backButtonText}>← Back</Text>
+          <Ionicons name="arrow-back" size={16} color={Palette.textPrimary} />
+          <Text style={styles.backBtnText}>Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerBadge}>🛡️ Contact Portal</Text>
+
+        <StatusBadge
+          label={
+            session?.status === 'sos'
+              ? 'EMERGENCY SOS'
+              : session?.status === 'active'
+              ? 'STREAM LIVE'
+              : session?.status === 'revoked'
+              ? 'STREAM REVOKED'
+              : 'PORTAL READY'
+          }
+          variant={session?.status === 'sos' ? 'coral' : session?.status === 'active' ? 'teal' : 'neutral'}
+          pulse={session?.status === 'sos' || session?.status === 'active'}
+        />
       </View>
 
-      <Text style={styles.heading} accessibilityRole="header">Live Emergency Tracking</Text>
-      <Text style={styles.subtitle}>
-        Real-time GPS tracker for emergency contacts. Updates stream live as the user moves.
-      </Text>
+      {/* Editorial Header */}
+      <View style={styles.editorialHeader}>
+        <Text style={styles.kicker}>TELEMETRY STREAM PORTAL</Text>
+        <Text style={styles.heading}>Live Contact Tracker.</Text>
+        <Text style={styles.subheading}>
+          Real-time GPS tracker for emergency safe circles. Coordinates update live across all devices with zero app install required.
+        </Text>
+      </View>
 
       {/* Track ID Search Bar */}
-      <View style={styles.searchCard}>
-        <Text style={styles.searchLabel}>SafeNest Tracking ID:</Text>
+      <GlassCard style={styles.searchCard}>
+        <Text style={styles.searchLabel}>SAFENEST TRACKING SESSION ID</Text>
         <View style={styles.searchRow}>
           <TextInput
             style={styles.searchInput}
-            placeholder="e.g. sn_1a2b3c"
-            placeholderTextColor="#999"
+            placeholder="e.g. sn_a1b2c3d4"
+            placeholderTextColor={Palette.textMuted}
             value={shareIdInput}
             onChangeText={setShareIdInput}
             autoCapitalize="none"
             autoCorrect={false}
-            accessible={true}
-            accessibilityLabel="Tracking session ID"
           />
-          <TouchableOpacity
-            style={styles.searchButton}
+          <TacticalButton
+            label="Connect"
+            variant="primary"
+            icon={<Ionicons name="navigate" size={16} color="#0A0C10" />}
             onPress={handleSearch}
-            accessible={true}
-            accessibilityRole="button"
-            accessibilityLabel="Connect to live tracker"
-            activeOpacity={0.8}
-          >
-            <Text style={styles.searchButtonText}>Track</Text>
-          </TouchableOpacity>
+            style={styles.searchBtn}
+          />
         </View>
-      </View>
+      </GlassCard>
 
+      {/* Main Content Area */}
       {loading ? (
-        <View style={styles.statusBox}>
+        <GlassCard style={styles.statusBox}>
+          <Ionicons name="sync" size={24} color={Palette.accentTeal} />
           <Text style={styles.statusBoxText}>Connecting to satellite live stream…</Text>
-        </View>
+        </GlassCard>
       ) : session?.status === 'revoked' ? (
-        <View style={styles.revokedCard} accessible={true} accessibilityRole="alert">
+        <GlassCard variant="danger" style={styles.revokedCard}>
           <View style={styles.revokedHeader}>
-            <Text style={styles.revokedIcon}>🔒</Text>
-            <Text style={styles.revokedTitle}>Location Sharing Revoked</Text>
+            <View style={styles.revokedIconOrb}>
+              <Ionicons name="lock-closed" size={22} color={Palette.accentCoral} />
+            </View>
+            <View>
+              <Text style={styles.revokedTitle}>Session Access Revoked</Text>
+              <Text style={styles.revokedSub}>{session.userName} has ended location sharing.</Text>
+            </View>
           </View>
-          <Text style={styles.revokedSubtitle}>
-            {session.userName} has ended location sharing and revoked access to this tracking session.
-          </Text>
-          <View style={styles.revokedDetailsBox}>
-            <Text style={styles.revokedDetailsText}>
-              • Real-time GPS broadcast has been terminated.
-            </Text>
-            <Text style={styles.revokedDetailsText}>
-              • Coordinate telemetry has been purged for security.
-            </Text>
-            <Text style={styles.revokedDetailsText}>
-              • Session ended: {new Date(session.updatedAt).toLocaleTimeString()}
-            </Text>
+
+          <View style={styles.revokedDetails}>
+            <Text style={styles.revokedDetailText}>• Real-time GPS stream broadcast has been terminated.</Text>
+            <Text style={styles.revokedDetailText}>• Coordinate telemetry was purged for privacy security.</Text>
+            <Text style={styles.revokedDetailText}>• Session ended: {new Date(session.updatedAt).toLocaleTimeString()}</Text>
           </View>
-          <TouchableOpacity
-            style={styles.backHomeBtn}
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.replace('/');
-              }
-            }}
-            accessible={true}
-            accessibilityRole="button"
-            accessibilityLabel="Return to previous screen"
-          >
-            <Text style={styles.backHomeBtnText}>← Return to Safety Dashboard</Text>
-          </TouchableOpacity>
-        </View>
+
+          <TacticalButton
+            label="Return to Safety Dashboard"
+            variant="secondary"
+            onPress={() => router.replace('/')}
+            style={styles.returnBtn}
+          />
+        </GlassCard>
       ) : session ? (
-        <View style={styles.sessionCard}>
-          {/* Status Header */}
-          <View
-            style={[
-              styles.statusBanner,
-              session.status === 'sos' && styles.statusBannerSOS,
-            ]}
+        <View style={styles.activeSessionSection}>
+          {/* Status Alert Banner */}
+          <GlassCard
+            variant={session.status === 'sos' ? 'danger' : 'active'}
+            style={styles.statusBanner}
           >
-            <Text style={styles.statusBannerTitle}>
-              {session.status === 'sos'
-                ? '🚨 EMERGENCY SOS ACTIVE'
-                : session.status === 'active'
-                ? '🟢 LIVE LOCATION STREAMING'
-                : '✓ USER REPORTED SAFE'}
-            </Text>
-            <Text style={styles.statusBannerSubtitle}>
-              {session.userName} •{' '}
-              {secondsAgo === 0 ? 'Updated just now' : `Updated ${secondsAgo}s ago`}
-            </Text>
-          </View>
-
-          {/* Interactive Radar Visual */}
-          <View style={styles.radarBox}>
-            <View style={styles.radarRing1}>
-              <View style={styles.radarRing2}>
-                <View style={styles.radarCenter}>
-                  <Text style={styles.centerIcon}>
-                    {session.status === 'sos' ? '🚨' : '📍'}
-                  </Text>
-                </View>
+            <View style={styles.bannerTop}>
+              <View style={styles.bannerTitleRow}>
+                <View
+                  style={[
+                    styles.statusDot,
+                    { backgroundColor: session.status === 'sos' ? Palette.accentCoral : Palette.accentTeal },
+                  ]}
+                />
+                <Text
+                  style={[
+                    styles.bannerTitle,
+                    { color: session.status === 'sos' ? Palette.accentCoral : Palette.accentTeal },
+                  ]}
+                >
+                  {session.status === 'sos' ? '🚨 EMERGENCY SOS ACTIVE' : '🟢 SATELLITE STREAMING'}
+                </Text>
               </View>
+              <Text style={styles.bannerTicker}>
+                {secondsAgo === 0 ? 'Ping: just now' : `Ping: ${secondsAgo}s ago`}
+              </Text>
             </View>
-            <Text style={styles.radarCoordinates}>
-              {session.latitude.toFixed(6)}°, {session.longitude.toFixed(6)}°
+            <Text style={styles.bannerUser}>
+              Broadcaster: <Text style={styles.bannerUserBold}>{session.userName}</Text>
             </Text>
-            <Text style={styles.radarAccuracy}>
-              Accuracy: {session.accuracy ? `±${Math.round(session.accuracy)} meters` : 'High Precision'}
-            </Text>
+          </GlassCard>
+
+          {/* Map View */}
+          <View style={styles.mapContainer}>
+            {Platform.OS !== 'web' && MapViewComponent ? (
+              <MapViewComponent
+                style={styles.mapView}
+                customMapStyle={DarkMapStyle}
+                initialRegion={{
+                  latitude: session.latitude,
+                  longitude: session.longitude,
+                  latitudeDelta: 0.01,
+                  longitudeDelta: 0.01,
+                }}
+                region={{
+                  latitude: session.latitude,
+                  longitude: session.longitude,
+                  latitudeDelta: 0.008,
+                  longitudeDelta: 0.008,
+                }}
+              >
+                {CircleComponent && (
+                  <CircleComponent
+                    center={{ latitude: session.latitude, longitude: session.longitude }}
+                    radius={Math.max(20, session.accuracy || 25)}
+                    fillColor={
+                      session.status === 'sos'
+                        ? 'rgba(255, 59, 48, 0.2)'
+                        : 'rgba(0, 242, 254, 0.15)'
+                    }
+                    strokeColor={
+                      session.status === 'sos'
+                        ? Palette.accentCoral
+                        : Palette.accentTeal
+                    }
+                    strokeWidth={1.5}
+                  />
+                )}
+                {MarkerComponent && (
+                  <MarkerComponent
+                    coordinate={{ latitude: session.latitude, longitude: session.longitude }}
+                    title={session.userName}
+                    description={`Accuracy: ±${Math.round(session.accuracy || 10)}m`}
+                  >
+                    <View style={styles.customPin}>
+                      <View
+                        style={[
+                          styles.pinOuterPulse,
+                          {
+                            backgroundColor:
+                              session.status === 'sos'
+                                ? 'rgba(255, 59, 48, 0.4)'
+                                : 'rgba(0, 242, 254, 0.4)',
+                          },
+                        ]}
+                      />
+                      <View
+                        style={[
+                          styles.pinInnerCore,
+                          {
+                            backgroundColor:
+                              session.status === 'sos'
+                                ? Palette.accentCoral
+                                : Palette.accentTeal,
+                          },
+                        ]}
+                      />
+                    </View>
+                  </MarkerComponent>
+                )}
+              </MapViewComponent>
+            ) : (
+              /* Radar Web Fallback */
+              <View style={styles.radarFallback}>
+                <Ionicons
+                  name={session.status === 'sos' ? 'warning' : 'navigate'}
+                  size={36}
+                  color={session.status === 'sos' ? Palette.accentCoral : Palette.accentTeal}
+                />
+                <Text style={styles.radarCoordsText}>
+                  {session.latitude.toFixed(5)}, {session.longitude.toFixed(5)}
+                </Text>
+                <Text style={styles.radarAccuracy}>
+                  Accuracy: ±{Math.round(session.accuracy || 10)}m
+                </Text>
+              </View>
+            )}
+
+            {/* Floating Live Telemetry Badge */}
+            <View style={styles.floatingCoordPill}>
+              <Ionicons name="location" size={13} color={Palette.accentLime} />
+              <Text style={styles.floatingCoordText}>
+                {session.latitude.toFixed(5)}, {session.longitude.toFixed(5)}
+              </Text>
+            </View>
           </View>
 
-          {/* Note if provided */}
-          {session.note ? (
-            <View style={styles.noteBox}>
-              <Text style={styles.noteLabel}>Journey / SOS Note:</Text>
-              <Text style={styles.noteText}>{`"${session.note}"`}</Text>
-            </View>
-          ) : null}
-
-          {/* Telemetry Grid */}
-          <View style={styles.telemetryGrid}>
-            <View style={styles.telemetryCell}>
-              <Text style={styles.telemetryLabel}>Speed</Text>
-              <Text style={styles.telemetryVal}>
-                {session.speed && session.speed > 0
-                  ? `${(session.speed * 3.6).toFixed(1)} km/h`
-                  : 'Stationary'}
-              </Text>
-            </View>
-            <View style={styles.telemetryCell}>
-              <Text style={styles.telemetryLabel}>Altitude</Text>
-              <Text style={styles.telemetryVal}>
-                {session.altitude ? `${Math.round(session.altitude)} m` : 'Sea level'}
-              </Text>
-            </View>
-            <View style={styles.telemetryCell}>
-              <Text style={styles.telemetryLabel}>Started At</Text>
-              <Text style={styles.telemetryVal}>
-                {new Date(session.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </Text>
-            </View>
-            <View style={styles.telemetryCell}>
-              <Text style={styles.telemetryLabel}>Last Ping</Text>
-              <Text style={styles.telemetryVal}>
-                {new Date(session.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-              </Text>
-            </View>
-          </View>
-
-          {/* Navigation Action Buttons */}
-          <TouchableOpacity
-            style={styles.directionsBtn}
-            onPress={openDirections}
-            accessible={true}
-            accessibilityRole="button"
-            accessibilityLabel="Get live directions to user's location"
-            activeOpacity={0.85}
-          >
-            <Text style={styles.directionsBtnText}>🧭 GET DIRECTIONS IN GOOGLE MAPS</Text>
-          </TouchableOpacity>
-
-          {session.status === 'sos' ? (
-            <TouchableOpacity
-              style={styles.emergencyCallBtn}
+          {/* Quick Action Buttons */}
+          <View style={styles.sessionActions}>
+            <TacticalButton
+              label="Get Directions in Maps"
+              variant="primary"
+              icon={<Ionicons name="navigate-outline" size={16} color="#0A0C10" />}
+              onPress={openDirections}
+              style={styles.sessionActionBtn}
+            />
+            <TacticalButton
+              label="Call 112 Helpline"
+              variant="coral"
+              icon={<Ionicons name="call" size={16} color="#FFFFFF" />}
               onPress={callEmergency}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Call emergency services 112"
-              activeOpacity={0.85}
-            >
-              <Text style={styles.emergencyCallText}>📞 Call Emergency Services (112)</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      ) : activeShareId ? (
-        <View style={styles.notFoundCard}>
-          <Text style={styles.notFoundIcon}>🔍</Text>
-          <Text style={styles.notFoundTitle}>Session Not Found or Expired</Text>
-          <Text style={styles.notFoundText}>
-            The tracking ID {`"${activeShareId}"`} does not exist or has expired. Make sure the user has an active sharing session.
-          </Text>
+              style={styles.sessionActionBtn}
+            />
+          </View>
         </View>
       ) : (
-        <View style={styles.instructionsCard}>
-          <Text style={styles.instructionsTitle}>ℹ️ How Emergency Tracking Works</Text>
-          <Text style={styles.instructionItem}>
-            1. When a user triggers SOS or starts live sharing, SafeNest generates a secure tracking link.
+        /* Empty Prompt */
+        <GlassCard style={styles.promptCard}>
+          <View style={styles.promptIconOrb}>
+            <Ionicons name="globe-outline" size={32} color={Palette.accentTeal} />
+          </View>
+          <Text style={styles.promptTitle}>Enter a SafeNest Tracking ID</Text>
+          <Text style={styles.promptDesc}>
+            Enter or paste a valid session identifier above to monitor real-time satellite coordinates dispatched by your emergency contact.
           </Text>
-          <Text style={styles.instructionItem}>
-            2. Emergency contacts can open the link in any web browser on Android, iPhone, Mac, or PC.
-          </Text>
-          <Text style={styles.instructionItem}>
-            3. Coordinates and speed update live without needing to install the app.
-          </Text>
-        </View>
+        </GlassCard>
       )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: '#100D20',
+    backgroundColor: Palette.bgPrimary,
   },
   content: {
-    padding: 22,
-    paddingTop: 55,
-    paddingBottom: 40,
-    maxWidth: 680,
-    alignSelf: 'center',
-    width: '100%',
+    paddingHorizontal: Spacing.four,
+    paddingTop: Platform.select({ ios: 60, android: 45 }) ?? 45,
+    paddingBottom: 110,
   },
-  headerRow: {
+  topNav: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: Spacing.four,
   },
-  backButton: {
-    minHeight: 44,
-    justifyContent: 'center',
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: Radius.md,
+    backgroundColor: Palette.bgElevated,
+    borderWidth: 1,
+    borderColor: Palette.borderSubtle,
   },
-  backButtonText: {
-    color: '#A78BFA',
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  headerBadge: {
-    color: '#86EFAC',
+  backBtnText: {
+    color: Palette.textPrimary,
     fontSize: 13,
     fontWeight: '700',
   },
-  heading: {
-    color: '#FFFFFF',
-    fontSize: 27,
-    fontWeight: 'bold',
+  editorialHeader: {
+    marginBottom: Spacing.four,
   },
-  subtitle: {
-    color: '#BDB6D0',
+  kicker: {
+    color: Palette.accentTeal,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginBottom: 6,
+  },
+  heading: {
+    color: Palette.textPrimary,
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    marginBottom: 6,
+  },
+  subheading: {
+    color: Palette.textSecondary,
     fontSize: 14,
-    lineHeight: 21,
-    marginTop: 8,
-    marginBottom: 20,
+    lineHeight: 20,
   },
   searchCard: {
-    backgroundColor: '#211B36',
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 20,
+    marginBottom: Spacing.four,
   },
   searchLabel: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 8,
+    color: Palette.accentTeal,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: Spacing.two,
   },
   searchRow: {
     flexDirection: 'row',
@@ -372,277 +440,214 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    backgroundColor: '#2E2648',
-    color: '#FFFFFF',
-    padding: 14,
-    borderRadius: 12,
-    fontSize: 15,
-    minHeight: 48,
+    backgroundColor: Palette.bgSecondary,
+    color: Palette.textPrimary,
+    borderRadius: Radius.md,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: Palette.borderSubtle,
+    fontFamily: Platform.select({ ios: 'Courier', default: 'monospace' }),
   },
-  searchButton: {
-    backgroundColor: '#8B5CF6',
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    minHeight: 48,
-  },
-  searchButtonText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 15,
+  searchBtn: {
+    minWidth: 110,
+    minHeight: 46,
   },
   statusBox: {
-    padding: 30,
     alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.five,
+    gap: 10,
   },
   statusBoxText: {
-    color: '#A78BFA',
-    fontSize: 15,
-  },
-  sessionCard: {
-    backgroundColor: '#211B36',
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1.5,
-    borderColor: '#3D315C',
-    marginBottom: 20,
-  },
-  statusBanner: {
-    backgroundColor: '#1E382A',
-    borderColor: '#2B7A4B',
-    borderWidth: 1.5,
-    padding: 14,
-    borderRadius: 14,
-    marginBottom: 16,
-  },
-  statusBannerSOS: {
-    backgroundColor: '#3E101D',
-    borderColor: '#E63955',
-  },
-  statusBannerRevoked: {
-    backgroundColor: '#292138',
-    borderColor: '#54466F',
-  },
-  statusBannerTitle: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '900',
-    textAlign: 'center',
-    letterSpacing: 0.5,
-  },
-  statusBannerSubtitle: {
-    color: '#D8D1E8',
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  radarBox: {
-    backgroundColor: '#171126',
-    borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  radarRing1: {
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    borderWidth: 1.5,
-    borderColor: '#43346B',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  radarRing2: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 1.5,
-    borderColor: '#6D56A8',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#24193D',
-  },
-  radarCenter: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#8B5CF6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  centerIcon: {
-    fontSize: 18,
-  },
-  radarCoordinates: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  radarAccuracy: {
-    color: '#86EFAC',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  noteBox: {
-    backgroundColor: '#2A2142',
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 16,
-  },
-  noteLabel: {
-    color: '#BDB6D0',
-    fontSize: 11,
+    color: Palette.textSecondary,
+    fontSize: 14,
     fontWeight: '600',
   },
-  noteText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginTop: 2,
-  },
-  telemetryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    justifyContent: 'space-between',
-    marginBottom: 18,
-  },
-  telemetryCell: {
-    backgroundColor: '#2E2648',
-    width: '48%',
-    padding: 12,
-    borderRadius: 10,
-  },
-  telemetryLabel: {
-    color: '#BDB6D0',
-    fontSize: 11,
-  },
-  telemetryVal: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginTop: 4,
-  },
-  directionsBtn: {
-    backgroundColor: '#2563EB',
-    padding: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    minHeight: 52,
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  directionsBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '900',
-    fontSize: 14,
-    letterSpacing: 0.5,
-  },
-  emergencyCallBtn: {
-    backgroundColor: '#E63955',
-    padding: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    minHeight: 52,
-    justifyContent: 'center',
-  },
-  emergencyCallText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  notFoundCard: {
-    backgroundColor: '#211B36',
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
-  },
-  notFoundIcon: {
-    fontSize: 36,
-    marginBottom: 10,
-  },
-  notFoundTitle: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: 'bold',
-    marginBottom: 6,
-  },
-  notFoundText: {
-    color: '#BDB6D0',
-    textAlign: 'center',
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  instructionsCard: {
-    backgroundColor: '#1E1730',
-    borderRadius: 16,
-    padding: 20,
-  },
-  instructionsTitle: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  instructionItem: {
-    color: '#BDB6D0',
-    fontSize: 13,
-    lineHeight: 20,
-    marginBottom: 8,
-  },
   revokedCard: {
-    backgroundColor: '#211B36',
-    borderRadius: 20,
-    padding: 24,
-    borderWidth: 1.5,
-    borderColor: '#4A3B66',
-    marginBottom: 20,
+    padding: Spacing.four,
   },
   revokedHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 12,
+    marginBottom: Spacing.three,
   },
-  revokedIcon: {
-    fontSize: 26,
-  },
-  revokedTitle: {
-    color: '#FFFFFF',
-    fontSize: 19,
-    fontWeight: 'bold',
-  },
-  revokedSubtitle: {
-    color: '#D8D1E8',
-    fontSize: 14,
-    lineHeight: 21,
-    marginBottom: 16,
-  },
-  revokedDetailsBox: {
-    backgroundColor: '#181228',
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 20,
-    gap: 6,
-  },
-  revokedDetailsText: {
-    color: '#BDB6D0',
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  backHomeBtn: {
-    backgroundColor: '#8B5CF6',
-    padding: 15,
-    borderRadius: 12,
+  revokedIconOrb: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Palette.accentCoralSoft,
     alignItems: 'center',
-    minHeight: 48,
     justifyContent: 'center',
   },
-  backHomeBtnText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 14,
+  revokedTitle: {
+    color: Palette.accentCoral,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  revokedSub: {
+    color: Palette.textSecondary,
+    fontSize: 13,
+    marginTop: 2,
+  },
+  revokedDetails: {
+    backgroundColor: 'rgba(0, 0, 0, 0.25)',
+    borderRadius: Radius.md,
+    padding: Spacing.three,
+    gap: 6,
+    marginBottom: Spacing.four,
+  },
+  revokedDetailText: {
+    color: Palette.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  returnBtn: {
+    width: '100%',
+  },
+  activeSessionSection: {
+    gap: 12,
+  },
+  statusBanner: {
+    padding: Spacing.three,
+  },
+  bannerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  bannerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  bannerTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  bannerTicker: {
+    color: Palette.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  bannerUser: {
+    color: Palette.textSecondary,
+    fontSize: 13,
+  },
+  bannerUserBold: {
+    color: Palette.textPrimary,
+    fontWeight: '700',
+  },
+  mapContainer: {
+    width: '100%',
+    height: 320,
+    borderRadius: Radius.xl,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Palette.borderGlass,
+    backgroundColor: Palette.bgSecondary,
+    position: 'relative',
+  },
+  mapView: {
+    width: '100%',
+    height: '100%',
+  },
+  customPin: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pinOuterPulse: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    position: 'absolute',
+  },
+  pinInnerCore: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  radarFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  radarCoordsText: {
+    color: Palette.textPrimary,
+    fontSize: 16,
+    fontWeight: '800',
+    fontFamily: Platform.select({ ios: 'Courier', default: 'monospace' }),
+  },
+  radarAccuracy: {
+    color: Palette.textMuted,
+    fontSize: 12,
+  },
+  floatingCoordPill: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(10, 12, 16, 0.88)',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: Palette.borderGlass,
+  },
+  floatingCoordText: {
+    color: Palette.textPrimary,
+    fontSize: 12,
+    fontWeight: '700',
+    fontFamily: Platform.select({ ios: 'Courier', default: 'monospace' }),
+  },
+  sessionActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  sessionActionBtn: {
+    flex: 1,
+    minHeight: 46,
+  },
+  promptCard: {
+    alignItems: 'center',
+    padding: Spacing.five,
+    marginTop: Spacing.two,
+  },
+  promptIconOrb: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: Palette.accentTealSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.three,
+  },
+  promptTitle: {
+    color: Palette.textPrimary,
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  promptDesc: {
+    color: Palette.textSecondary,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 20,
+    maxWidth: 320,
   },
 });

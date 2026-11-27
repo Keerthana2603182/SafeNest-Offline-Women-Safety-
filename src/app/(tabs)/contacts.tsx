@@ -1,6 +1,4 @@
-import { useRouter } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -13,7 +11,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useRouter } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
+import { Ionicons } from '@expo/vector-icons';
 
+import { Palette, Radius, Spacing } from '@/constants/theme';
+import { GlassCard } from '@/components/ui/glass-card';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { TacticalButton } from '@/components/ui/tactical-button';
 import { auth } from '@/lib/firebase';
 import { fetchContactsFromCloud, syncContactsToCloud } from '@/lib/safety-service';
 
@@ -31,6 +36,7 @@ export default function ContactsScreen() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [loaded, setLoaded] = useState(false);
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     async function loadContacts() {
@@ -90,6 +96,7 @@ export default function ContactsScreen() {
       return;
     }
 
+    setAdding(true);
     const next = [
       ...contacts,
       {
@@ -102,12 +109,13 @@ export default function ContactsScreen() {
     await saveContacts(next);
     setName('');
     setPhone('');
+    setAdding(false);
   }
 
   function removeContact(id: string, contactName: string) {
     Alert.alert(
       `Remove ${contactName}?`,
-      'This will remove this trusted contact from SafeNest emergency dispatch on this device.',
+      'This person will no longer receive emergency dispatch alerts or telemetry from your device.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -136,7 +144,7 @@ export default function ContactsScreen() {
   }
 
   async function testAlertContact(contactItem: Contact) {
-    const msg = `SafeNest Alert Test: Hi ${contactItem.name}, this is a test from my SafeNest app. You are listed as my emergency trusted contact.`;
+    const msg = `SafeNest Alert Test: Hi ${contactItem.name}, this is a verified test from my SafeNest emergency app. You are registered in my Safe Circle.`;
     const smsUrl = `sms:${contactItem.phone}?body=${encodeURIComponent(msg)}`;
     try {
       const canOpen = await Linking.canOpenURL(smsUrl);
@@ -150,295 +158,358 @@ export default function ContactsScreen() {
     }
   }
 
-  if (!loaded) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.heading}>Loading safe circle...</Text>
-      </View>
-    );
+  function getInitials(fullName: string) {
+    const parts = fullName.trim().split(' ');
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return fullName.substring(0, 2).toUpperCase();
   }
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={styles.headerRow}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => {
-            if (router.canGoBack()) {
-              router.back();
-            } else {
-              router.replace('/');
-            }
-          }}
-          accessible={true}
-          accessibilityRole="button"
-          accessibilityLabel="Back to dashboard"
-        >
-          <Text style={styles.backButtonText}>← Dashboard</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerBadge}>👥 Safe Circle</Text>
-      </View>
+      <View style={styles.content}>
+        {/* Top Navigation & Status */}
+        <View style={styles.topNav}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/');
+              }
+            }}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel="Back to dashboard"
+          >
+            <Ionicons name="arrow-back" size={16} color={Palette.textPrimary} />
+            <Text style={styles.backBtnText}>Dashboard</Text>
+          </TouchableOpacity>
 
-      <Text style={styles.heading} accessibilityRole="header">Trusted Contacts</Text>
-      <Text style={styles.subtitle}>
-        Add people you trust. In an emergency, SafeNest dispatches simulated SMS alerts with your real-time GPS coordinates to your safe circle.
-      </Text>
+          <StatusBadge
+            label={`${contacts.length} IN CIRCLE`}
+            variant={contacts.length > 0 ? 'lime' : 'neutral'}
+          />
+        </View>
 
-      {/* Input Section */}
-      <View style={styles.formCard}>
-        <TextInput
-          style={styles.input}
-          placeholder="Contact name (e.g. Mom, Alex)"
-          placeholderTextColor="#999"
-          value={name}
-          onChangeText={setName}
-          accessible={true}
-          accessibilityLabel="Contact name"
-          accessibilityHint="Enter name of your trusted person"
+        {/* Editorial Header */}
+        <View style={styles.editorialHeader}>
+          <Text style={styles.kicker}>GUARDIAN MESH</Text>
+          <Text style={styles.heading}>Safe Circle.</Text>
+          <Text style={styles.subheading}>
+            Trusted people who receive instantaneous automated SMS dispatch and live satellite telemetry links when SOS is triggered.
+          </Text>
+        </View>
+
+        {/* Add Contact Card */}
+        <GlassCard style={styles.addCard}>
+          <Text style={styles.addCardTitle}>ENROLL NEW GUARDIAN</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Full Name (e.g. Elena Rostova)"
+            placeholderTextColor={Palette.textMuted}
+            value={name}
+            onChangeText={setName}
+            autoCorrect={false}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Mobile Number (e.g. +1 555 019 2834)"
+            placeholderTextColor={Palette.textMuted}
+            keyboardType="phone-pad"
+            value={phone}
+            onChangeText={setPhone}
+          />
+          <TacticalButton
+            label="+ Add Guardian"
+            variant="primary"
+            icon={<Ionicons name="person-add" size={16} color="#0A0C10" />}
+            onPress={addContact}
+            loading={adding}
+            style={styles.addBtn}
+          />
+        </GlassCard>
+
+        {/* Contact List */}
+        <FlatList
+          data={contacts}
+          keyExtractor={(item) => item.id}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          ListHeaderComponent={
+            contacts.length > 0 ? (
+              <View style={styles.listHeaderRow}>
+                <Text style={styles.listHeaderTitle}>ACTIVE GUARDIANS</Text>
+                <Text style={styles.listHeaderMeta}>SYNCED TO CLOUD</Text>
+              </View>
+            ) : undefined
+          }
+          ListEmptyComponent={
+            loaded ? (
+              <GlassCard style={styles.emptyCard}>
+                <View style={styles.emptyIconOrb}>
+                  <Ionicons name="people-outline" size={32} color={Palette.accentLime} />
+                </View>
+                <Text style={styles.emptyTitle}>No Guardians Configured</Text>
+                <Text style={styles.emptyDesc}>
+                  Add at least 1 or 2 people you trust. In emergencies, SafeNest dispatches simulated SMS alerts with your real-time satellite coordinates to your safe circle.
+                </Text>
+              </GlassCard>
+            ) : undefined
+          }
+          renderItem={({ item }) => (
+            <GlassCard style={styles.contactCard}>
+              <View style={styles.contactTopRow}>
+                <View style={styles.avatarOrb}>
+                  <Text style={styles.avatarText}>{getInitials(item.name)}</Text>
+                </View>
+
+                <View style={styles.contactInfo}>
+                  <Text style={styles.contactName}>{item.name}</Text>
+                  <Text style={styles.contactPhone}>{item.phone}</Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.deleteBtn}
+                  onPress={() => removeContact(item.id, item.name)}
+                  accessible={true}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${item.name}`}
+                >
+                  <Ionicons name="trash-outline" size={16} color={Palette.textMuted} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.contactActionsRow}>
+                <TouchableOpacity
+                  style={styles.contactActionBtn}
+                  onPress={() => callContact(item.phone)}
+                >
+                  <Ionicons name="call" size={14} color={Palette.textPrimary} />
+                  <Text style={styles.contactActionText}>Direct Call</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.contactActionBtn, styles.testAlertBtn]}
+                  onPress={() => testAlertContact(item)}
+                >
+                  <Ionicons name="send" size={13} color={Palette.accentLime} />
+                  <Text style={[styles.contactActionText, { color: Palette.accentLime }]}>Test Alert</Text>
+                </TouchableOpacity>
+              </View>
+            </GlassCard>
+          )}
         />
-
-        <TextInput
-          style={styles.input}
-          placeholder="Phone number"
-          placeholderTextColor="#999"
-          keyboardType="phone-pad"
-          value={phone}
-          onChangeText={setPhone}
-          accessible={true}
-          accessibilityLabel="Phone number"
-          accessibilityHint="Enter phone number for emergency contact"
-        />
-
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={addContact}
-          accessible={true}
-          accessibilityRole="button"
-          accessibilityLabel="Add contact to safe circle"
-          activeOpacity={0.85}
-        >
-          <Text style={styles.addText}>+ Add to Safe Circle</Text>
-        </TouchableOpacity>
       </View>
-
-      <Text style={styles.sectionTitle} accessibilityRole="header">
-        Your Safe Circle ({contacts.length})
-      </Text>
-
-      <FlatList
-        data={contacts}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyIcon}>👥</Text>
-            <Text style={styles.emptyTitle}>No contacts added yet</Text>
-            <Text style={styles.emptyText}>
-              Add at least 1-2 people you trust so SafeNest can notify them when SOS is triggered.
-            </Text>
-          </View>
-        }
-        renderItem={({ item }) => (
-          <View style={styles.contactCard} accessible={true} accessibilityLabel={`Contact ${item.name}, ${item.phone}`}>
-            <View style={styles.contactInfo}>
-              <Text style={styles.contactName}>{item.name}</Text>
-              <Text style={styles.contactPhone}>{item.phone}</Text>
-            </View>
-
-            <View style={styles.contactActions}>
-              <TouchableOpacity
-                style={styles.actionIconBtn}
-                onPress={() => callContact(item.phone)}
-                accessible={true}
-                accessibilityRole="button"
-                accessibilityLabel={`Call ${item.name}`}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.actionIconText}>📞</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.actionIconBtn}
-                onPress={() => testAlertContact(item)}
-                accessible={true}
-                accessibilityRole="button"
-                accessibilityLabel={`Send test message to ${item.name}`}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.actionIconText}>✉️</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={() => removeContact(item.id, item.name)}
-                accessible={true}
-                accessibilityRole="button"
-                accessibilityLabel={`Remove ${item.name} from contacts`}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.deleteText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-      />
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: '#100D20',
-    padding: 22,
-    paddingTop: 55,
+    backgroundColor: Palette.bgPrimary,
   },
-  headerRow: {
+  content: {
+    flex: 1,
+    paddingHorizontal: Spacing.four,
+    paddingTop: Platform.select({ ios: 60, android: 45 }) ?? 45,
+  },
+  topNav: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: Spacing.four,
   },
-  backButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    backgroundColor: '#261F40',
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: Radius.md,
+    backgroundColor: Palette.bgElevated,
+    borderWidth: 1,
+    borderColor: Palette.borderSubtle,
   },
-  backButtonText: {
-    color: '#D8B4FE',
+  backBtnText: {
+    color: Palette.textPrimary,
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
   },
-  headerBadge: {
-    color: '#A78BFA',
-    fontSize: 13,
-    fontWeight: '600',
+  editorialHeader: {
+    marginBottom: Spacing.four,
+  },
+  kicker: {
+    color: Palette.accentLime,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginBottom: 6,
   },
   heading: {
-    color: '#FFFFFF',
+    color: Palette.textPrimary,
     fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 8,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    marginBottom: 6,
   },
-  subtitle: {
-    color: '#BDB6D0',
+  subheading: {
+    color: Palette.textSecondary,
     fontSize: 14,
-    lineHeight: 21,
-    marginBottom: 20,
+    lineHeight: 20,
   },
-  formCard: {
-    backgroundColor: '#211B36',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
+  addCard: {
+    marginBottom: Spacing.four,
+  },
+  addCardTitle: {
+    color: Palette.accentLime,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: Spacing.two,
   },
   input: {
-    backgroundColor: '#2E2648',
-    color: '#FFFFFF',
-    padding: 15,
-    borderRadius: 12,
-    marginBottom: 12,
-    fontSize: 15,
-    minHeight: 50,
+    backgroundColor: Palette.bgSecondary,
+    color: Palette.textPrimary,
+    borderRadius: Radius.md,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: Palette.borderSubtle,
+    marginBottom: 10,
   },
-  addButton: {
-    backgroundColor: '#8B5CF6',
-    padding: 15,
-    borderRadius: 12,
-    alignItems: 'center',
-    minHeight: 50,
-    justifyContent: 'center',
-  },
-  addText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 15,
-  },
-  sectionTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 12,
+  addBtn: {
+    marginTop: 2,
+    minHeight: 46,
   },
   listContent: {
-    paddingBottom: 30,
+    paddingBottom: 110,
+    gap: 10,
   },
-  contactCard: {
-    backgroundColor: '#211B36',
-    padding: 16,
-    borderRadius: 14,
-    marginBottom: 12,
+  listHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: Spacing.two,
+    marginTop: Spacing.two,
+  },
+  listHeaderTitle: {
+    color: Palette.textSecondary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+  },
+  listHeaderMeta: {
+    color: Palette.textMuted,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  contactCard: {
+    padding: Spacing.three,
+  },
+  contactTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: Spacing.two,
+  },
+  avatarOrb: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Palette.bgElevated,
+    borderWidth: 1.5,
+    borderColor: Palette.borderHighlight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    color: Palette.accentLime,
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   contactInfo: {
     flex: 1,
   },
   contactName: {
-    color: '#FFFFFF',
+    color: Palette.textPrimary,
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   contactPhone: {
-    color: '#A78BFA',
-    marginTop: 4,
+    color: Palette.textSecondary,
     fontSize: 13,
+    marginTop: 2,
+    fontFamily: Platform.select({ ios: 'Courier', default: 'monospace' }),
   },
-  contactActions: {
+  deleteBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  contactActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  contactActionBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  actionIconBtn: {
-    backgroundColor: '#2E2648',
-    width: 44,
-    height: 44,
-    borderRadius: 22,
     justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: Radius.sm,
+    backgroundColor: Palette.bgElevated,
+    borderWidth: 1,
+    borderColor: Palette.borderSubtle,
+  },
+  testAlertBtn: {
+    backgroundColor: 'rgba(212, 255, 58, 0.08)',
+    borderColor: 'rgba(212, 255, 58, 0.25)',
+  },
+  contactActionText: {
+    color: Palette.textPrimary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  emptyCard: {
     alignItems: 'center',
+    padding: Spacing.five,
+    marginTop: Spacing.three,
   },
-  actionIconText: {
-    fontSize: 18,
-  },
-  deleteButton: {
-    backgroundColor: '#3E1D27',
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  emptyIconOrb: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: Palette.accentLimeSoft,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-  },
-  deleteText: {
-    color: '#FF6B6B',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    padding: 30,
-    backgroundColor: '#1E1730',
-    borderRadius: 16,
-    marginTop: 10,
-  },
-  emptyIcon: {
-    fontSize: 36,
-    marginBottom: 8,
+    marginBottom: Spacing.three,
   },
   emptyTitle: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
+    color: Palette.textPrimary,
+    fontSize: 18,
+    fontWeight: '800',
     marginBottom: 6,
   },
-  emptyText: {
-    color: '#BDB6D0',
+  emptyDesc: {
+    color: Palette.textSecondary,
+    fontSize: 13,
     textAlign: 'center',
-    fontSize: 12,
-    lineHeight: 18,
+    lineHeight: 20,
+    maxWidth: 300,
   },
 });
