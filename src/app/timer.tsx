@@ -16,7 +16,7 @@ import {
   clearPersistentTimer,
   getPersistentTimer,
   savePersistentTimer,
-} from '../lib/safety-service';
+} from '@/lib/safety-service';
 
 const PRESET_DURATIONS = [
   { label: '5 min', minutes: 5, description: 'Quick walk / car' },
@@ -88,7 +88,7 @@ export default function SafetyTimerScreen() {
           onPress: () => {
             setIsExpired(false);
             void clearPersistentTimer();
-            router.push('/');
+            router.push({ pathname: '/', params: { trigger: 'sos' } });
           },
         },
       ]
@@ -277,7 +277,13 @@ export default function SafetyTimerScreen() {
         <View style={styles.headerRow}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => router.back()}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/');
+              }
+            }}
             accessible={true}
             accessibilityRole="button"
             accessibilityLabel="Go back to dashboard"
@@ -311,7 +317,7 @@ export default function SafetyTimerScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.sosExpiredButton}
-                onPress={() => router.push('/')}
+                onPress={() => router.push({ pathname: '/', params: { trigger: 'sos' } })}
                 accessible={true}
                 accessibilityRole="button"
                 accessibilityLabel="Go to SOS Emergency screen"

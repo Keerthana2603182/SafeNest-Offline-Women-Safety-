@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { LiveShareSession, subscribeToLiveLocation } from '../lib/safety-service';
+import { LiveShareSession, subscribeToLiveLocation } from '@/lib/safety-service';
 
 export default function LiveTrackingViewerScreen() {
   const router = useRouter();
@@ -90,12 +90,18 @@ export default function LiveTrackingViewerScreen() {
       <View style={styles.headerRow}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.push('/')}
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/');
+            }
+          }}
           accessible={true}
           accessibilityRole="button"
-          accessibilityLabel="Back to SafeNest Home"
+          accessibilityLabel="Back to previous screen"
         >
-          <Text style={styles.backButtonText}>← SafeNest Home</Text>
+          <Text style={styles.backButtonText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerBadge}>🛡️ Contact Portal</Text>
       </View>
@@ -159,12 +165,18 @@ export default function LiveTrackingViewerScreen() {
           </View>
           <TouchableOpacity
             style={styles.backHomeBtn}
-            onPress={() => router.push('/')}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/');
+              }
+            }}
             accessible={true}
             accessibilityRole="button"
-            accessibilityLabel="Return to SafeNest Home"
+            accessibilityLabel="Return to previous screen"
           >
-            <Text style={styles.backHomeBtnText}>Return to SafeNest Home</Text>
+            <Text style={styles.backHomeBtnText}>← Return to Safety Dashboard</Text>
           </TouchableOpacity>
         </View>
       ) : session ? (

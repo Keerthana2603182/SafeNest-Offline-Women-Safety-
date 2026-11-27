@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -17,9 +18,10 @@ import {
     User,
 } from 'firebase/auth';
 
-import { auth } from '../lib/firebase';
+import { auth } from '@/lib/firebase';
 
 export default function AccountScreen() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLogin, setIsLogin] = useState(true);
@@ -84,6 +86,25 @@ export default function AccountScreen() {
   if (user) {
     return (
       <View style={styles.container}>
+        <View style={styles.headerRow}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/');
+              }
+            }}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel="Back to dashboard"
+          >
+            <Text style={styles.backButtonText}>← Dashboard</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerBadge}>🛡️ Account</Text>
+        </View>
+
         <Text style={styles.logo} accessibilityRole="header">🛡️ SafeNest</Text>
         <Text style={styles.heading}>{"You're signed in!"}</Text>
         <Text style={styles.subtitle}>{user.email}</Text>
@@ -113,6 +134,25 @@ export default function AccountScreen() {
 
   return (
     <View style={styles.container}>
+      <View style={styles.headerRow}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/');
+            }
+          }}
+          accessible={true}
+          accessibilityRole="button"
+          accessibilityLabel="Back to dashboard"
+        >
+          <Text style={styles.backButtonText}>← Dashboard</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerBadge}>🛡️ Account</Text>
+      </View>
+
       <Text style={styles.logo} accessibilityRole="header">🛡️ SafeNest</Text>
 
       <Text style={styles.heading}>
@@ -191,6 +231,29 @@ const styles = StyleSheet.create({
     backgroundColor: '#171326',
     justifyContent: 'center',
     padding: 25,
+    paddingTop: 55,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  backButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: '#261F40',
+  },
+  backButtonText: {
+    color: '#D8B4FE',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  headerBadge: {
+    color: '#A78BFA',
+    fontSize: 13,
+    fontWeight: '600',
   },
   logo: {
     color: '#FFFFFF',

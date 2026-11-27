@@ -19,7 +19,7 @@ import {
   stopLiveSharing,
   subscribeToConnectionStatus,
   updateLiveLocation,
-} from '../lib/safety-service';
+} from '@/lib/safety-service';
 
 type TrustedContact = {
   id: string;

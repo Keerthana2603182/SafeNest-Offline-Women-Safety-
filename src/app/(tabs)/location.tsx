@@ -17,7 +17,7 @@ import {
   stopLiveSharing,
   subscribeToConnectionStatus,
   updateLiveLocation,
-} from '../lib/safety-service';
+} from '@/lib/safety-service';
 
 type ExtendedCoordinates = {
   latitude: number;
@@ -288,7 +288,13 @@ export default function LocationScreen() {
       <View style={styles.headerRow}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/');
+            }
+          }}
           accessible={true}
           accessibilityRole="button"
           accessibilityLabel="Back to dashboard"

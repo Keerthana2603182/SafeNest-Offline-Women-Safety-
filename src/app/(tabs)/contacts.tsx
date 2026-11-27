@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { useEffect, useState } from 'react';
 import {
@@ -13,8 +14,8 @@ import {
   View,
 } from 'react-native';
 
-import { auth } from '../lib/firebase';
-import { fetchContactsFromCloud, syncContactsToCloud } from '../lib/safety-service';
+import { auth } from '@/lib/firebase';
+import { fetchContactsFromCloud, syncContactsToCloud } from '@/lib/safety-service';
 
 type Contact = {
   id: string;
@@ -25,6 +26,7 @@ type Contact = {
 const STORAGE_KEY = 'safenest_trusted_contacts';
 
 export default function ContactsScreen() {
+  const router = useRouter();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -161,6 +163,25 @@ export default function ContactsScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      <View style={styles.headerRow}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/');
+            }
+          }}
+          accessible={true}
+          accessibilityRole="button"
+          accessibilityLabel="Back to dashboard"
+        >
+          <Text style={styles.backButtonText}>← Dashboard</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerBadge}>👥 Safe Circle</Text>
+      </View>
+
       <Text style={styles.heading} accessibilityRole="header">Trusted Contacts</Text>
       <Text style={styles.subtitle}>
         Add people you trust. In an emergency, SafeNest dispatches simulated SMS alerts with your real-time GPS coordinates to your safe circle.
@@ -274,6 +295,28 @@ const styles = StyleSheet.create({
     backgroundColor: '#100D20',
     padding: 22,
     paddingTop: 55,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  backButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: '#261F40',
+  },
+  backButtonText: {
+    color: '#D8B4FE',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  headerBadge: {
+    color: '#A78BFA',
+    fontSize: 13,
+    fontWeight: '600',
   },
   heading: {
     color: '#FFFFFF',
