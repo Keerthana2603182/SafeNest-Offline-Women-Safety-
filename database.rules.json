@@ -1,0 +1,23 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "contacts": {
+          ".validate": "newData.hasChildren() || newData.val() == null"
+        },
+        "safety_timer": {
+          ".validate": "newData.hasChildren() || newData.val() == null"
+        }
+      }
+    },
+    "live_locations": {
+      "$shareId": {
+        ".read": "data.exists() && data.child('status').val() !== 'revoked' && (data.child('status').val() === 'active' || data.child('status').val() === 'sos' || data.child('status').val() === 'resolved')",
+        ".write": "auth != null && ((!data.exists() && newData.child('id').val() === $shareId && newData.child('userId').val() === auth.uid && (newData.child('status').val() === 'active' || newData.child('status').val() === 'sos')) || (data.exists() && data.child('userId').val() === auth.uid && data.child('status').val() !== 'revoked' && newData.child('userId').val() === auth.uid && newData.child('id').val() === $shareId))",
+        ".validate": "newData.hasChildren(['id', 'userId', 'status', 'latitude', 'longitude', 'startedAt', 'updatedAt']) && newData.child('userId').isString() && newData.child('userId').val() != 'anonymous' && newData.child('latitude').isNumber() && newData.child('latitude').val() >= -90 && newData.child('latitude').val() <= 90 && newData.child('longitude').isNumber() && newData.child('longitude').val() >= -180 && newData.child('longitude').val() <= 180 && (newData.child('status').val() === 'active' || newData.child('status').val() === 'revoked' || newData.child('status').val() === 'expired' || newData.child('status').val() === 'sos' || newData.child('status').val() === 'resolved')"
+      }
+    }
+  }
+}

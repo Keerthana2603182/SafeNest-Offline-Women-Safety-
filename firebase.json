@@ -1,0 +1,11 @@
+{
+  "database": {
+    "instance": "safenest-98008-default-rtdb",
+    "rules": "database.rules.json"
+  },
+  "emulators": {
+    "database": {
+      "port": 9000
+    }
+  }
+}

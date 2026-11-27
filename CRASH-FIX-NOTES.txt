@@ -1,0 +1,14 @@
+SafeNest repair copy
+
+Change made:
+- Removed the custom Reanimated animated splash overlay from src/app/_layout.tsx.
+- Removed the manual SplashScreen.preventAutoHideAsync() call and the animated splash callback path. Expo's normal splash behavior is now used.
+
+Why:
+- The supplied crash logs do not contain an AndroidRuntime FATAL EXCEPTION or a ReactNativeJS stack trace for SafeNest, so they do not prove the exact crash cause.
+- The custom animated splash was a startup-only code path and a reasonable first isolation/removal because it runs before the app UI appears.
+
+Important:
+- This is a targeted startup simplification, not a verified diagnosis. The project still needs to be rebuilt as a new development APK; an already-installed APK will not change when JavaScript files are edited.
+- node_modules, .git, and local .expo cache were intentionally excluded. Run npm install in the project folder before starting/building.
+- No emergency alert, SMS, or live-location sharing feature is represented as production-ready by this repair.
